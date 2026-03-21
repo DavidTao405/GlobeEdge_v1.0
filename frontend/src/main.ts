@@ -36,6 +36,10 @@ const router = createRouter({
       path: '/dashboard/:simId',
       component: () => import('./views/ResultDashboardPage.vue'),
     },
+    {
+      path: '/simulations/:simId/whatif',
+      component: () => import('./views/WhatIfPage.vue'),
+    },
   ],
 })
 
