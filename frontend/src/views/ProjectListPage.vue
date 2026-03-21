@@ -18,6 +18,9 @@ const form = ref({
   mc_runs: 10000,
   sim_horizon: 30,
   noise_level: 0.05,
+  use_forgetting: false,
+  use_elm: false,
+  use_motivated_reasoning: false,
 })
 
 onMounted(() => store.fetchProjects())
@@ -72,6 +75,23 @@ function goTo(projectId: string, tab: string) {
           <input type="range" v-model.number="form.noise_level" min="0.01" max="0.2" step="0.01" />
         </div>
       </div>
+      <!-- Psychology Mechanisms -->
+      <div class="psych-section">
+        <div class="psych-title">🧠 Psychology Mechanisms</div>
+        <label class="checkbox-row">
+          <input type="checkbox" v-model="form.use_forgetting" />
+          Ebbinghaus Forgetting — agents forget at type-specific rates
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" v-model="form.use_elm" />
+          ELM Dual Pathway — high-involvement agents process deeper
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" v-model="form.use_motivated_reasoning" />
+          Motivated Reasoning — Backfire Effect on distant beliefs
+        </label>
+      </div>
+
       <button class="btn btn-primary" :disabled="!form.name.trim()" @click="handleCreate">
         Create Project
       </button>
@@ -196,4 +216,8 @@ function goTo(projectId: string, tab: string) {
 .btn-sm { padding: 5px 12px; font-size: 11px; }
 .muted { color: var(--text-secondary); font-size: 14px; }
 input[type="range"] { width: 100%; accent-color: #3b82f6; }
+.psych-section { margin: 16px 0; padding: 14px; background: rgba(139, 92, 246, 0.05); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 8px; }
+.psych-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: #a78bfa; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; cursor: pointer; }
+.checkbox-row input[type="checkbox"] { accent-color: #8b5cf6; }
 </style>

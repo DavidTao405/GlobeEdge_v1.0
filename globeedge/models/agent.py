@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +23,7 @@ class Agent(db.Model):
     type: Mapped[str | None] = mapped_column(String)    # media | forum | kol | demographic | institution
     domain: Mapped[str | None] = mapped_column(String)  # news | social | financial | government
     belief_init: Mapped[list[float] | None] = mapped_column(ARRAY(db.Float))
+    issue_involvement: Mapped[float] = mapped_column(Float, default=0.5)  # ELM: 0=不關心, 1=核心關切
     created_at: Mapped[datetime] = mapped_column(
         db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

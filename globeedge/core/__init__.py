@@ -6,6 +6,7 @@ from .ews_monitor import EWSAlert, EWSMonitor, MoEEWSMonitor
 from .fj_engine import FJEngine
 from .intervention import Intervention, InterventionEngine, compute_whatif_diff
 from .monte_carlo import AgentNoiseProfile, MonteCarloRunner
+from .psychology import PsychologyConfig, apply_forgetting, apply_motivated_reasoning, compute_alpha_elm
 
 __all__ = [
     "BeliefState",
