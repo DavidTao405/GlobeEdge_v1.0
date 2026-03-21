@@ -154,6 +154,54 @@ def apply_motivated_reasoning(
 
 # ── 心理機制設定 ──────────────────────────────────────────
 
+# ── Layer 4: System 1/2 雙歷程整合 ──────────────────────
+
+# System 1/2 參數
+ALPHA_S1 = 0.15   # System 1: 低 alpha（淺處理）
+ALPHA_S2 = 0.45   # System 2: 高 alpha（深處理）
+DECAY_S1 = 0.35   # System 1: 快速衰退
+DECAY_S2 = 0.05   # System 2: 緩慢衰退
+
+
+def dual_process_update(
+    b_next: np.ndarray,
+    b0: np.ndarray,
+    social_influence: np.ndarray,
+    agent_types: list[str],
+    message_emotionality: float,
+) -> np.ndarray:
+    """System 1/2 整合：對已計算的 b_next 施加雙歷程衰退修正。
+
+    不替換 b_next，而是修正「b_next 偏離 b0 的部分」的保留率。
+
+    System 1（快、自動、情緒）→ 保留率低，快速回到 b0
+    System 2（慢、理性、審慎）→ 保留率高，持久偏離
+
+    最終保留率 = w_s1 × R_s1 + w_s2 × R_s2
+    """
+    w_s1 = message_emotionality          # 情緒訊息走 System 1
+    w_s2 = 1.0 - message_emotionality    # 理性訊息走 System 2
+
+    result = b_next.copy()
+    for i, atype in enumerate(agent_types):
+        if i >= result.shape[0]:
+            break
+        base_retention = compute_retention(atype)
+
+        # System 1 保留率：低（快速衰退）
+        r_s1 = base_retention * (1 - DECAY_S1)
+        # System 2 保留率：高（持久記憶）
+        r_s2 = base_retention * (1 - DECAY_S2)
+
+        # 加權保留率
+        retention = w_s1 * r_s1 + w_s2 * r_s2
+
+        # 對偏離 b0 的部分施加衰退
+        result[i] = b0[i] + retention * (b_next[i] - b0[i])
+
+    return np.clip(result, -1.0, 1.0)
+
+
 @dataclass
 class PsychologyConfig:
     """心理機制開關。全部預設關閉，向後相容。"""

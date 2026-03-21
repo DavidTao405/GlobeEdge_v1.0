@@ -41,6 +41,7 @@ class FJEngine:
         *,
         use_forgetting: bool = False,
         use_elm: bool = False,
+        use_dual_process: bool = False,
         agent_types: list[str] | None = None,
         agent_involvements: list[float] | None = None,
         message_emotionality: float = 0.5,
@@ -53,7 +54,8 @@ class FJEngine:
             noise: 高斯噪聲標準差
             use_forgetting: 啟用 Ebbinghaus 遺忘曲線
             use_elm: 啟用 ELM 雙路徑更新
-            agent_types: Agent 類型清單（遺忘用）
+            use_dual_process: 啟用 System 1/2 雙歷程整合
+            agent_types: Agent 類型清單（遺忘/雙歷程用）
             agent_involvements: Agent 議題投入度清單（ELM 用）
             message_emotionality: 訊息情緒性 0-1（ELM 用）
         """
@@ -82,6 +84,15 @@ class FJEngine:
             )
             B_next = np.clip(B_next, -1.0, 1.0)
 
+        # Layer 4: System 1/2 雙歷程整合
+        if use_dual_process and agent_types:
+            from .psychology import dual_process_update
+            social_influence = state.W @ state.B
+            B_next = dual_process_update(
+                B_next, self.b0, social_influence,
+                agent_types, message_emotionality,
+            )
+
         return BeliefState(
             t=state.t + 1,
             B=B_next,
@@ -98,9 +109,10 @@ class FJEngine:
         *,
         use_forgetting: bool = False,
         use_elm: bool = False,
+        use_dual_process: bool = False,
         agent_types: list[str] | None = None,
         agent_involvements: list[float] | None = None,
-        message_emotionality: float = 0.5,
+        message_emotionality: float | dict[int, float] = 0.5,
     ) -> list[BeliefState]:
         """多步推演，回傳完整軌跡。
 
@@ -111,22 +123,28 @@ class FJEngine:
             noise: 高斯噪聲標準差
             use_forgetting: 啟用 Ebbinghaus 遺忘
             use_elm: 啟用 ELM 雙路徑
+            use_dual_process: 啟用 System 1/2
             agent_types: Agent 類型清單
             agent_involvements: Agent 投入度清單
-            message_emotionality: 訊息情緒性
+            message_emotionality: 訊息情緒性 (固定值 或 {時步: 值} 字典)
         """
         if events is None:
             events = {}
         trajectory = [initial]
         state = initial
         for t in range(1, horizon + 1):
+            # 支持時變 emotionality（從爬蟲即時資料）
+            emo = (message_emotionality.get(t, 0.5)
+                   if isinstance(message_emotionality, dict)
+                   else message_emotionality)
             state = self.step(
                 state, event=events.get(t), noise=noise,
                 use_forgetting=use_forgetting,
                 use_elm=use_elm,
+                use_dual_process=use_dual_process,
                 agent_types=agent_types,
                 agent_involvements=agent_involvements,
-                message_emotionality=message_emotionality,
+                message_emotionality=emo,
             )
             trajectory.append(state)
         return trajectory
