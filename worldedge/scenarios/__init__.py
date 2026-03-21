@@ -1,9 +1,13 @@
 """WorldEdge 議題情境模組。"""
 
-from . import ai_regulation, energy, geopolitics, trade_war
+from . import ai_regulation, energy, geopolitics, iran_war, recall, trade_war
 from .base import Scenario
 
 SCENARIOS = {
+    # 即時驗證（2026 進行中）
+    "iran_war": iran_war.build,
+    "recall": recall.build,
+    # 歷史 Backtest（已完成基礎版）
     "energy_policy": energy.build,
     "ai_regulation": ai_regulation.build,
     "geopolitics": geopolitics.build,
