@@ -2,9 +2,9 @@
 
 from .belief_state import BeliefState
 from .distribution import SimulationDistribution
-from .ews_monitor import EWSAlert, EWSMonitor
+from .ews_monitor import EWSAlert, EWSMonitor, MoEEWSMonitor
 from .fj_engine import FJEngine
-from .monte_carlo import MonteCarloRunner
+from .monte_carlo import AgentNoiseProfile, MonteCarloRunner
 
 __all__ = [
     "BeliefState",
@@ -12,5 +12,7 @@ __all__ = [
     "MonteCarloRunner",
     "SimulationDistribution",
     "EWSMonitor",
+    "MoEEWSMonitor",
     "EWSAlert",
+    "AgentNoiseProfile",
 ]

@@ -3,6 +3,7 @@
 排程總覽：
   news_crawler_daily  每天 02:00  Crawl4AI 爬取新聞首頁引用關係
   rss_crawler_6h      每 6 小時   RSS 快速引用關係
+  ptt_crawler_8h      每 8 小時   PTT 八卦/政黑板推噓（主力資料源）
   bluesky_daily       每天 03:00  Bluesky KOL 互動關係
   financial_daily     每天 04:00  金融文件 LLM 解析（有成本上限）
 
@@ -57,6 +58,19 @@ def _run_rss_crawler():
     logger.info("[scheduler] RSS done, %d edges", len(edges))
 
 
+def _run_ptt_crawler():
+    """PTT 八卦/政黑板推噓分析（主力資料源）。"""
+    from worldedge.crawler.ptt_crawler import run_ptt_pipeline
+
+    logger.info("[scheduler] starting PTT pipeline")
+    edges = run_ptt_pipeline(
+        boards=["Gossiping", "HatePolitics"],
+        pages_per_board=3,
+        min_interactions=5,
+    )
+    logger.info("[scheduler] PTT done, %d edges", len(edges))
+
+
 def _run_bluesky_crawler():
     """Bluesky KOL 互動關係爬蟲。"""
     from worldedge.crawler.bluesky_crawler import run_bluesky_pipeline
@@ -100,6 +114,14 @@ def init_scheduler():
         trigger=IntervalTrigger(hours=6),
         id="rss_crawler_6h",
         name="每 6 小時 RSS 爬取引用關係",
+        replace_existing=True,
+    )
+    # PTT — 每 8 小時（主力資料源）
+    scheduler.add_job(
+        _run_ptt_crawler,
+        trigger=IntervalTrigger(hours=8),
+        id="ptt_crawler_8h",
+        name="每 8 小時 PTT 八卦/政黑板推噓",
         replace_existing=True,
     )
     # Bluesky — 每天凌晨 3:00

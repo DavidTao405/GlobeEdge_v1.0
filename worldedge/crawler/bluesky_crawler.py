@@ -2,9 +2,17 @@
 
 用途：W 矩陣補充（weight_type = behavioral）
 API 完全公開，不需要 API key。
+
+帳號探勘策略：
+  1. TW_KOL_HANDLES — 手動策展的台灣相關意見領袖
+  2. discover_taiwan_accounts() — 用 searchActors + getProfiles 自動發現
+  3. fetch_starter_pack_members() — 從 Starter Pack 批量取得帳號
+
+⚠️ searchPosts API 在台灣被 CDN 403，所以用 searchActors 替代。
 """
 
 import logging
+import time
 from collections import Counter
 
 import httpx
@@ -13,14 +21,34 @@ logger = logging.getLogger(__name__)
 
 BSKY_PUBLIC_API = "https://public.api.bsky.app/xrpc"
 
-# 台灣重點追蹤帳號（KOL 節點）
+# ── 台灣重點追蹤帳號（手動策展） ─────────────────────────
+# 篩選條件：(1) 台灣政治/安全/媒體相關 (2) 有活躍回覆互動
 TW_KOL_HANDLES = [
-    "bsky.app",            # Bluesky 官方（測試用）
-    "jay.bsky.team",       # Bluesky 團隊（測試用，有大量 replies）
-    # 台灣帳號（有貼文的）
-    "udn.bsky.social",
-    "ltn.bsky.social",
-    # 在此擴充台灣媒體人、立委、意見領袖 handle
+    # 記者 / 媒體人
+    "brianhioe.bsky.social",       # New Bloom 主編，台灣社運
+    "emilyzfeng.bsky.social",      # NPR 駐中台記者
+    "aliceysu.bsky.social",        # Economist 中台線記者
+    "vivianwu.bsky.social",        # 大聲姐，YouTube 媒體
+    "suika.bsky.social",           # Tokyo Review 編輯
+    # 學者 / 智庫分析師
+    "kuorum.bsky.social",          # Raymond Kuo 郭泓均，亞洲安全
+    "chen-yenhan.bsky.social",     # 陳彥翰，Georgetown 台灣國防
+    "lnachman32.bsky.social",      # Lev Nachman，台大政治學
+    "bglaser.bsky.social",         # Bonnie Glaser，German Marshall Fund
+    "kerim.one",                   # 傅可恩，台灣人類學家
+    "elifriedman.bsky.social",     # Eli Friedman，Cornell 中國勞工
+    # 科技 / 跨域分析
+    "aisupremacy.bsky.social",     # Michael Spencer，在台科技分析師
+    "lokman.org",                  # Lokman Tsui，科技與人權
+    "elisewang.bsky.social",       # 中世紀法律史 + 陰謀論研究
+    "sensehofstede.nl",            # Sense Hofstede，中國分析
+]
+
+# 搜尋關鍵字（用於 discover_taiwan_accounts）
+_DISCOVERY_KEYWORDS = [
+    "台灣", "Taiwan", "聯合報", "中央社", "ETtoday", "自由時報",
+    "三立", "TVBS", "中時", "風傳媒", "報導者", "立委", "記者",
+    "taiwan news", "taipei", "taiwan media", "taiwan politics",
 ]
 
 
@@ -182,12 +210,124 @@ def run_bluesky_pipeline(
     return all_edges
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    edges = run_bluesky_pipeline()
-    for e in edges:
-        print(
-            f"  {e['source']} → {e['target']}  "
-            f"raw={e['weight_raw']}  w={e.get('weight', '?')}  "
-            f"type={e.get('weight_type')}"
+# ── 帳號探勘 ──────────────────────────────────────────────
+
+def discover_taiwan_accounts(
+    keywords: list[str] | None = None,
+    min_posts: int = 10,
+    min_followers: int = 500,
+) -> list[dict]:
+    """用 searchActors + getProfiles 自動發現台灣相關帳號。
+
+    Returns:
+        [{"handle": ..., "name": ..., "followers": ..., "posts": ...}, ...]
+    """
+    if keywords is None:
+        keywords = _DISCOVERY_KEYWORDS
+
+    # Step 1: 用 searchActors 收集候選 handle
+    candidates: set[str] = set()
+    for kw in keywords:
+        try:
+            r = httpx.get(
+                f"{BSKY_PUBLIC_API}/app.bsky.actor.searchActors",
+                params={"q": kw, "limit": 25},
+                timeout=10,
+            )
+            if r.status_code == 200:
+                for a in r.json().get("actors", []):
+                    h = a.get("handle", "")
+                    if h:
+                        candidates.add(h)
+        except Exception:
+            logger.debug("searchActors failed for keyword %s", kw)
+        time.sleep(0.2)
+
+    logger.info("discover: %d candidates from %d keywords", len(candidates), len(keywords))
+
+    # Step 2: 批量 getProfiles（每次最多 25 個）
+    results: list[dict] = []
+    candidate_list = list(candidates)
+    for i in range(0, len(candidate_list), 25):
+        batch = candidate_list[i : i + 25]
+        try:
+            r = httpx.get(
+                f"{BSKY_PUBLIC_API}/app.bsky.actor.getProfiles",
+                params=[("actors", h) for h in batch],
+                timeout=15,
+            )
+            if r.status_code == 200:
+                for p in r.json().get("profiles", []):
+                    pc = p.get("postsCount", 0) or 0
+                    fc = p.get("followersCount", 0) or 0
+                    if pc >= min_posts and fc >= min_followers:
+                        results.append({
+                            "handle": p.get("handle"),
+                            "name": p.get("displayName", ""),
+                            "followers": fc,
+                            "posts": pc,
+                            "description": (p.get("description") or "")[:100],
+                        })
+        except Exception:
+            logger.debug("getProfiles failed for batch starting at %d", i)
+        time.sleep(0.3)
+
+    results.sort(key=lambda x: -x["followers"])
+    logger.info("discover: %d accounts pass filters (posts>=%d, followers>=%d)",
+                len(results), min_posts, min_followers)
+    return results
+
+
+def fetch_starter_pack_members(pack_uri: str) -> list[str]:
+    """從 Starter Pack 取得成員帳號清單。
+
+    pack_uri 格式: at://did:plc:xxx/app.bsky.graph.starterpack/xxx
+    """
+    try:
+        r = httpx.get(
+            f"{BSKY_PUBLIC_API}/app.bsky.graph.getStarterPack",
+            params={"starterPack": pack_uri},
+            timeout=15,
         )
+        r.raise_for_status()
+        data = r.json()
+        items = (
+            data.get("starterPack", {})
+            .get("list", {})
+            .get("items", [])
+        )
+        handles = [m.get("subject", {}).get("handle", "") for m in items]
+        handles = [h for h in handles if h]
+        logger.info("starter pack %s: %d members", pack_uri[:50], len(handles))
+        return handles
+    except Exception:
+        logger.exception("failed to fetch starter pack %s", pack_uri)
+        return []
+
+
+if __name__ == "__main__":
+    import sys
+
+    logging.basicConfig(level=logging.INFO)
+
+    if "--discover" in sys.argv:
+        # 探勘模式：自動發現台灣帳號
+        accounts = discover_taiwan_accounts()
+        print(f"\n{'='*70}")
+        print(f"發現 {len(accounts)} 個台灣相關帳號（>=10 posts, >=500 followers）")
+        print(f"{'='*70}")
+        for a in accounts:
+            print(
+                f"  {a['handle']:50s}  "
+                f"f={a['followers']:6d}  p={a['posts']:5d}  "
+                f"{a['name']}"
+            )
+    else:
+        # 正常 pipeline 模式
+        edges = run_bluesky_pipeline()
+        for e in edges:
+            print(
+                f"  {e['source']} → {e['target']}  "
+                f"raw={e['weight_raw']}  w={e.get('weight', '?')}  "
+                f"type={e.get('weight_type')}"
+            )

@@ -9,11 +9,8 @@
 
 ## P1 — 近期處理
 - [ ] aisstream 確保只有一個 WebSocket 連線實例（scheduler.py 已有 lock 機制）
-- [ ] `/api/simulations/{id}/status` 目前直接查 DB status 欄位
-      Phase 5 接上 Celery 後改成 Redis-first（先查 Redis cache，miss 再查 DB）
-      API 契約不需變動，只是快取層行為改變
-      相關檔案：`worldedge/api/simulations.py` → `get_status()`
-- [ ] Celery worker 整合：simulation task 啟動時寫 Redis `sim:{id}:status`
+- [x] `/api/simulations/{id}/status` Redis-first（Phase 5 完成）
+- [x] Celery worker 整合：simulation task 寫 Redis `simulation:{id}:status`
 - [ ] Cloudflare Tunnel 範圍控制：只暴露 Flask :5001，不暴露 DB/Redis/Flower
 
 ## P2 — 未來如果對外分享
@@ -24,6 +21,14 @@
       - GDELT 衝突事件 → 地緣政治資料
       - W 矩陣 → 揭示媒體影響力結構
       - 仿真結果 → 可能被解讀為輿論操縱建議
+
+## Phase 7 待辦
+
+### MoE W 矩陣分域
+- 實作 MoEInfluenceRouter
+- 需要：至少 3 個歷史事件的 backtest 資料
+- 驗證方式：分域 W vs 全域 W 的預測誤差比較
+- 預計工作量：2 天
 
 ## 爬蟲層備忘
 - [ ] ETtoday RSS URL 歷史上改過幾次，如果 feedparser entries 為空需換備用 URL

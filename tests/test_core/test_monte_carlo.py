@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from worldedge.core import FJEngine, MonteCarloRunner, SimulationDistribution
+from worldedge.core import AgentNoiseProfile, FJEngine, MonteCarloRunner, SimulationDistribution
 
 
 def _setup(n=5, d=8, seed=42):
@@ -81,3 +81,70 @@ class TestMonteCarloRunner:
         mean_no = d_no_event.mean()[-1, :, 7].mean()
         mean_ev = d_with_event.mean()[-1, :, 7].mean()
         assert mean_ev > mean_no
+
+
+class TestMoENoise:
+    """MoE 分層噪聲測試。"""
+
+    def test_moe_noise_distribution(self):
+        """KOL 的噪聲標準差應大於 media。"""
+        engine, B0, W = _setup(n=3, d=8)
+        runner = MonteCarloRunner(
+            engine, n_runs=10, seed=42,
+            agent_types=["media", "kol", "demographic"],
+        )
+        samples = np.array([
+            runner._build_noise_for_B((3, 8), noise_level=1.0)
+            for _ in range(1000)
+        ])
+        media_std = samples[:, 0, :].std()
+        kol_std = samples[:, 1, :].std()
+        demo_std = samples[:, 2, :].std()
+
+        assert kol_std > media_std, f"kol={kol_std:.4f} <= media={media_std:.4f}"
+        assert demo_std > media_std, f"demo={demo_std:.4f} <= media={media_std:.4f}"
+
+    def test_moe_fallback_without_types(self):
+        """沒有 agent_types 時應 fallback 為均勻噪聲。"""
+        engine, B0, W = _setup()
+        runner = MonteCarloRunner(engine, n_runs=50, seed=0)
+        dist = runner.run(B0, W, horizon=10)
+        assert dist.trajectories.shape[0] == 50
+
+    def test_moe_with_types_shape(self):
+        """有 agent_types 時 output shape 不變。"""
+        engine, B0, W = _setup(n=5)
+        runner = MonteCarloRunner(
+            engine, n_runs=50, seed=0,
+            agent_types=["media", "kol", "demographic", "forum", "institution"],
+        )
+        dist = runner.run(B0, W, horizon=10)
+        assert dist.trajectories.shape == (50, 11, 5, 8)
+
+    def test_moe_values_in_range(self):
+        """MoE 噪聲後信念值仍在 [-1, 1]。"""
+        engine, B0, W = _setup(n=5)
+        runner = MonteCarloRunner(
+            engine, n_runs=100, seed=0,
+            agent_types=["media", "kol", "demographic", "forum", "institution"],
+        )
+        dist = runner.run(B0, W, horizon=10)
+        assert np.all(dist.trajectories >= -1.0)
+        assert np.all(dist.trajectories <= 1.0)
+
+    def test_kol_laplace_heavier_tails(self):
+        """KOL 使用 Laplace 分佈，尾部應比 media (Normal) 更重。"""
+        engine, B0, W = _setup(n=2, d=8)
+        runner = MonteCarloRunner(
+            engine, n_runs=10, seed=42,
+            agent_types=["media", "kol"],
+        )
+        samples = np.array([
+            runner._build_noise_for_B((2, 8), noise_level=1.0)
+            for _ in range(5000)
+        ])
+        # kurtosis of Laplace > Normal
+        from scipy.stats import kurtosis
+        media_kurt = kurtosis(samples[:, 0, :].flatten())
+        kol_kurt = kurtosis(samples[:, 1, :].flatten())
+        assert kol_kurt > media_kurt, f"kol_kurt={kol_kurt:.2f} <= media_kurt={media_kurt:.2f}"

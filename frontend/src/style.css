@@ -1,0 +1,56 @@
+/* WorldEdge — IBM Design Language inspired dark theme */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+:root {
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --bg: #111827;
+  --card-bg: #1f2937;
+  --border: #374151;
+  --gauge-bg: #374151;
+
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg);
+
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Light mode override */
+@media (prefers-color-scheme: light) {
+  :root {
+    --text-primary: #111827;
+    --text-secondary: #6b7280;
+    --bg: #f9fafb;
+    --card-bg: #ffffff;
+    --border: #e5e7eb;
+    --gauge-bg: #e5e7eb;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+#app {
+  width: 100%;
+}
+
+/* Observable Plot dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  .plot text { fill: var(--text-secondary) !important; }
+  .plot [aria-label="x-axis"] line,
+  .plot [aria-label="y-axis"] line { stroke: #4b5563 !important; }
+}
