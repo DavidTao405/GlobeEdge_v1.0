@@ -10,9 +10,9 @@
 
 | 項目 | 數值 |
 |---|---|
-| 原始碼檔案 | 72 |
-| 總程式碼行數 | 8,128 |
-| Git commits | 5 |
+| 原始碼檔案 | 76 |
+| 總程式碼行數 | 8,542 |
+| Git commits | 7 |
 | Python 套件 | `globeedge/` |
 | 測試 | 47/47 passing (0.78s) |
 | 前端 TypeScript 錯誤 | 0 |
@@ -29,6 +29,7 @@
 | GPU | RTX 4070 SUPER |
 | DB | PostgreSQL 16 (Docker) |
 | Cache | Redis 7 (Docker) |
+| LLM | Ollama qwen3.5:9b (本地) |
 | Frontend | Vue 3 + TypeScript + Pinia |
 | Charts | Observable Plot + D3 |
 
@@ -43,7 +44,7 @@
 | Phase 3 | 爬蟲層 | ✅ 完成 | PTT, Bluesky, RSS, 金融爬蟲 + APScheduler |
 | Phase 4 | 地緣政治訊號 | ✅ 完成 | USGS, GDELT, ImpactMapper, signal_scheduler |
 | Phase 5 | 仿真佇列 + GPU | ✅ 完成 | Celery task, torch.bmm GPU batching, Redis 進度 |
-| Phase 6 | 前端儀表板 | ✅ 完成 | 結果展示 + 5 頁設計流程 (專案→維度→Agent→邊→事件) |
+| Phase 6 | 前端儀表板 | ✅ 完成 | 結果展示 + 5 頁設計流程 + AI 輔助 b(0) 估計 |
 | Phase 7 | 整合測試與校準 | ✅ 完成 | Granger Causality, EWS backtest, alpha=0.3 校準 |
 
 ---
@@ -71,7 +72,10 @@ globeedge/
 ├── api/                     # Flask Blueprint
 │   ├── projects.py          #   POST/GET/PATCH/DELETE /api/projects
 │   ├── simulations.py       #   POST + status (Redis-first) + result
-│   └── agents.py            #   POST agents + edges + matrix
+│   └── agents.py            #   POST agents + edges + matrix + AI estimate
+│
+├── services/                # 業務服務
+│   └── belief_estimator.py  #   AI 輔助 b(0) 估計 (Ollama qwen3.5:9b)
 │
 ├── crawler/                 # 輿論爬蟲（W 矩陣資料源）
 │   ├── ptt_crawler.py       #   PTT 八卦/政黑板 (curl_cffi TLS)
@@ -106,8 +110,8 @@ frontend/src/
 ├── views/                   # 7 個頁面
 │   ├── ProjectListPage.vue  #   /projects — 專案管理
 │   ├── DimensionPage.vue    #   /projects/:id/dimensions
-│   ├── AgentDesignPage.vue  #   /projects/:id/agents (含雷達圖)
-│   ├── EdgeDesignPage.vue   #   /projects/:id/edges (含 W 熱圖)
+│   ├── AgentDesignPage.vue  #   /projects/:id/agents (雷達圖 + AI 估計)
+│   ├── EdgeDesignPage.vue   #   /projects/:id/edges (W 熱圖)
 │   ├── EventDesignPage.vue  #   /projects/:id/events + Run Simulation
 │   └── ResultDashboardPage.vue  # /dashboard — 結果展示
 ├── components/
@@ -123,6 +127,8 @@ frontend/src/
     └── api.ts               #   API client
 
 scripts/
+├── start_api.py             # 啟動 Flask API
+├── start_crawlers.py        # 啟動爬蟲 + 訊號排程
 ├── init_db.py               # 初始化 DB schema + 驗證
 ├── calibrate.py             # Granger Causality 校準
 ├── backtest.py              # EWS 歷史 backtest
@@ -173,24 +179,28 @@ tests/test_core/             # 47 個單元測試
 
 ---
 
-## 爬蟲 / 訊號排程
+## 服務運行狀態
 
-### 爬蟲 (crawler/scheduler.py)
+| 服務 | 啟動方式 | 預設位址 |
+|---|---|---|
+| PostgreSQL | `docker compose up -d` | 127.0.0.1:5432 |
+| Redis | `docker compose up -d` | 127.0.0.1:6379 |
+| Flask API | `python scripts/start_api.py` | 0.0.0.0:5001 |
+| 爬蟲+訊號排程 | `python scripts/start_crawlers.py` | 背景 (7 jobs) |
+| Ollama LLM | 系統服務 | localhost:11434 |
+| 前端 dev | `cd frontend && npm run dev` | localhost:5173 |
 
-| Job ID | 頻率 | 資料源 | 用途 |
-|---|---|---|---|
-| `news_crawler_daily` | 每天 02:00 | Crawl4AI 新聞首頁 | W 矩陣 structural 邊 |
-| `rss_crawler_6h` | 每 6 小時 | RSS (ETtoday 等) | W 矩陣 structural 邊 |
-| `ptt_crawler_8h` | 每 8 小時 | PTT 八卦/政黑 | **W 矩陣主力 behavioral 邊** |
-| `bluesky_daily` | 每天 03:00 | Bluesky AT Protocol | W 矩陣 behavioral 邊 |
-| `financial_daily` | 每天 04:00 | 金融文件 LLM | belief_init 校準 |
+### 排程 Jobs
 
-### 訊號 (signals/signal_scheduler.py)
-
-| Job ID | 頻率 | 資料源 | 用途 |
-|---|---|---|---|
-| `usgs_hourly` | 每小時 | USGS 地震 API | ExternalEvent (natural) |
-| `gdelt_6h` | 每 6 小時 | GDELT 負面新聞 | ExternalEvent (geopolitical) |
+| Job ID | 頻率 | 資料源 |
+|---|---|---|
+| `news_crawler_daily` | 每天 02:00 | Crawl4AI 新聞 |
+| `rss_crawler_6h` | 每 6 小時 | RSS |
+| `ptt_crawler_8h` | 每 8 小時 | **PTT（主力）** |
+| `bluesky_daily` | 每天 03:00 | Bluesky |
+| `financial_daily` | 每天 04:00 | 金融 LLM |
+| `usgs_hourly` | 每小時 | USGS 地震 |
+| `gdelt_6h` | 每 6 小時 | GDELT 新聞 |
 
 ---
 
@@ -208,34 +218,6 @@ tests/test_core/             # 47 個單元測試
 
 ---
 
-## 前端流程
-
-```
-/projects                     建立專案 (name, α=0.3, MC=10000)
-  ↓
-/projects/:id/dimensions      設定 8 個維度 (dim4, 5 可覆蓋)
-  ↓
-/projects/:id/agents          新增 Agent + 8-slider belief_init + 雷達圖
-  ↓
-/projects/:id/edges           建 W 矩陣邊 + D3 熱圖
-  ↓
-/projects/:id/events          新增 ExternalEvent + impact_vector slider
-  ↓
-🚀 Run Simulation             → /dashboard 看結果
-```
-
----
-
-## Docker 服務
-
-```yaml
-# docker-compose.yml
-postgres:   127.0.0.1:5432  (不暴露公網)
-redis:      127.0.0.1:6379  (不暴露公網)
-```
-
----
-
 ## 安全措施
 
 | 項目 | 狀態 |
@@ -250,7 +232,7 @@ redis:      127.0.0.1:6379  (不暴露公網)
 
 ---
 
-## 推薦參數 (Phase 7 校準)
+## 推薦參數
 
 ```python
 PROJECT_DEFAULTS = {
@@ -263,34 +245,14 @@ PROJECT_DEFAULTS = {
 
 ---
 
-## 待辦 (TODO)
-
-### 近期
-- [ ] 議題 5 (美伊戰爭) 接入真實 PTT 資料作為 ground truth
-- [ ] 議題 6 (大罷免) PTT 政黑板即時驗證
-- [ ] /api/simulations/{id}/status 接上 Celery 後改成 Redis-first (目前查 DB)
-- [ ] AIS WebSocket 即時訊號接入 (aisstream.io)
-- [ ] adsb.lol 軍機偵測接入
-
-### 中期
-- [ ] MoE W 矩陣分域 (需 ≥3 歷史事件 backtest 資料)
-- [ ] Pol.is vTaiwan 歷史資料接入校準 b(0)
-- [ ] 前端 AgentDesignPage 雷達圖支援多 Agent 疊加比較
-- [ ] 跨議題影響力結構比較報告
-
-### 長期
-- [ ] 發表技術報告 / preprint (alpha=0.3 + 六議題跨比較)
-- [ ] GitHub repo 名稱改為 GlobeEdge (已完成 → GlobeEdge_v1.0)
-- [ ] 反身性問題研究聲明完善
-
----
-
 ## Git History
 
 ```
+4339249  AI-assisted belief estimation via Ollama Qwen3.5
+ae41ce9  Add project-state.md
 7a3baf4  Rename project: WorldEdge → GlobeEdge
 f3b848b  Frontend: full scenario design workflow (5 new pages)
 1d69354  Add real-time scenarios: Iran war impact + Taiwan recall movement
 ba7b306  Phase 3-7: crawlers, signals, MoE core, calibration, 4 scenario analyses
-0a0a956  Initial commit: WorldEdge social belief dynamics model
+0a0a956  Initial commit
 ```
