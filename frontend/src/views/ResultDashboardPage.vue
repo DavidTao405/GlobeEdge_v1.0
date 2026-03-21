@@ -32,7 +32,7 @@ async function handleLoad() {
 <template>
   <div class="dashboard">
     <header class="header">
-      <h1>WorldEdge</h1>
+      <h1>GlobeEdge</h1>
       <span class="subtitle">Social Belief Dynamics Model</span>
     </header>
 

@@ -277,7 +277,7 @@ def granger_calibrate(event: HistoricalEvent, maxlag: int = 5) -> dict:
                 logger.debug("Granger test failed for %s→%s: %s", agent_names[j], agent_names[i], e)
 
     # 評估 alpha 最佳值：比較不同 alpha 下的預測誤差
-    from worldedge.core import FJEngine, MonteCarloRunner
+    from globeedge.core import FJEngine, MonteCarloRunner
 
     best_alpha = 0.6
     best_error = float('inf')
@@ -359,7 +359,7 @@ def validate_directions(event: HistoricalEvent, calibrated_edges: list[dict]) ->
 
 
 def main():
-    parser = argparse.ArgumentParser(description="WorldEdge Phase 7 校準")
+    parser = argparse.ArgumentParser(description="GlobeEdge Phase 7 校準")
     parser.add_argument("--event", type=str, help="事件 ID")
     parser.add_argument("--period", type=str, help="時間段 (YYYY-MM)")
     parser.add_argument("--list", action="store_true", help="列出所有事件")

@@ -1,7 +1,7 @@
-# WorldEdge — Claude Code 指引
+# GlobeEdge — Claude Code 指引
 
 ## 專案說明
-社會信念動態世界模型，詳見 WORLDEDGE_PLAN.md
+社會信念動態世界模型，詳見 GLOBEEDGE_PLAN.md
 
 ## 開發原則
 - 數學核心 (core/) 零外部依賴，可獨立測試

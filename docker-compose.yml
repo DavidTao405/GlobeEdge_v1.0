@@ -4,7 +4,7 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: worldedge
+      POSTGRES_DB: globeedge
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     volumes:

@@ -1,4 +1,4 @@
-# WorldEdge TODO
+# GlobeEdge TODO
 
 ## P0 — 立刻確認
 - [x] .env 在 .gitignore 裡

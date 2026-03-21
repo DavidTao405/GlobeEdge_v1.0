@@ -42,7 +42,7 @@ def run_backtest(event: HistoricalEvent, verbose: bool = False) -> dict:
             "significance": str,     # significant | marginal | none
         }
     """
-    from worldedge.core import FJEngine, MonteCarloRunner, MoEEWSMonitor
+    from globeedge.core import FJEngine, MonteCarloRunner, MoEEWSMonitor
 
     traj = event.belief_trajectory  # (horizon+1, n_agents, n_dims)
     n_agents = len(event.agents)
@@ -177,7 +177,7 @@ def print_report(result: dict):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="WorldEdge EWS Backtest")
+    parser = argparse.ArgumentParser(description="GlobeEdge EWS Backtest")
     parser.add_argument("--event", type=str, help="事件 ID")
     parser.add_argument("--all", action="store_true", help="全部 backtest")
     parser.add_argument("--verbose", action="store_true", help="詳細輸出每步 alert")

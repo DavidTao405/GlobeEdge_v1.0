@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from worldedge.core import SimulationDistribution
+from globeedge.core import SimulationDistribution
 
 
 def _make_dist(n_runs=100, horizon=10, n_agents=5, n_dims=8, seed=42):

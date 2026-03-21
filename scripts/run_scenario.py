@@ -24,9 +24,9 @@ import numpy as np
 
 sys.path.insert(0, ".")
 
-from worldedge.core import FJEngine, MonteCarloRunner, MoEEWSMonitor, SimulationDistribution
-from worldedge.scenarios import get_scenario, list_scenarios
-from worldedge.scenarios.base import Scenario
+from globeedge.core import FJEngine, MonteCarloRunner, MoEEWSMonitor, SimulationDistribution
+from globeedge.scenarios import get_scenario, list_scenarios
+from globeedge.scenarios.base import Scenario
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -170,7 +170,7 @@ def print_report(result: dict):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="WorldEdge 議題情境仿真")
+    parser = argparse.ArgumentParser(description="GlobeEdge 議題情境仿真")
     parser.add_argument("--scenario", type=str, help="情境 ID")
     parser.add_argument("--event", type=int, help="只注入特定事件 (index)")
     parser.add_argument("--events", type=str, help="注入多個事件 (逗號分隔)")

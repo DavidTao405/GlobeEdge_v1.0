@@ -2,7 +2,7 @@
 
 import pytest
 
-from worldedge.core import EWSAlert, EWSMonitor, MoEEWSMonitor
+from globeedge.core import EWSAlert, EWSMonitor, MoEEWSMonitor
 
 
 class TestEWSMonitor:

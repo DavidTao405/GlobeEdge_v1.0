@@ -16,8 +16,8 @@ from sqlalchemy import inspect, text
 # 確保專案根目錄在 sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from worldedge.db import db
-from worldedge.models import (
+from globeedge.db import db
+from globeedge.models import (
     Agent,
     EWSAlert,
     ExternalEvent,
@@ -107,7 +107,7 @@ def check_schema(app: Flask) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="初始化 WorldEdge 資料庫")
+    parser = argparse.ArgumentParser(description="初始化 GlobeEdge 資料庫")
     parser.add_argument("--check", action="store_true", help="僅驗證 schema")
     args = parser.parse_args()
 

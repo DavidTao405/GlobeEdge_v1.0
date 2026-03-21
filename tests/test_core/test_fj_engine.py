@@ -5,7 +5,7 @@ from datetime import datetime
 import numpy as np
 import pytest
 
-from worldedge.core import BeliefState, FJEngine
+from globeedge.core import BeliefState, FJEngine
 
 
 def _make_state(n=5, d=8, seed=42):

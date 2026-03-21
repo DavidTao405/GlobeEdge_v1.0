@@ -5,7 +5,7 @@ from datetime import datetime
 import numpy as np
 import pytest
 
-from worldedge.core import BeliefState
+from globeedge.core import BeliefState
 
 
 class TestBeliefState:

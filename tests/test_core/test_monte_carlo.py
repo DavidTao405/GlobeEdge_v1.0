@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from worldedge.core import AgentNoiseProfile, FJEngine, MonteCarloRunner, SimulationDistribution
+from globeedge.core import AgentNoiseProfile, FJEngine, MonteCarloRunner, SimulationDistribution
 
 
 def _setup(n=5, d=8, seed=42):

@@ -1,7 +1,7 @@
 <template>
   <div class="app-shell">
     <nav class="topnav">
-      <router-link to="/projects" class="brand">WorldEdge</router-link>
+      <router-link to="/projects" class="brand">GlobeEdge</router-link>
       <div class="nav-links">
         <router-link to="/projects">Projects</router-link>
         <router-link to="/dashboard">Dashboard</router-link>
