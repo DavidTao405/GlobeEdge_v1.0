@@ -80,6 +80,51 @@ def create_edge():
     return jsonify(_serialize_edge(edge)), 201
 
 
+@bp.get("")
+def list_agents():
+    """列出指定 project 的所有 Agent。"""
+    project_id = request.args.get("project_id")
+    if not project_id:
+        return jsonify(error="project_id query param is required"), 400
+    agents = Agent.query.filter_by(project_id=project_id).order_by(Agent.name).all()
+    return jsonify([_serialize_agent(a) for a in agents])
+
+
+@bp.post("/estimate-belief")
+def estimate_belief():
+    """AI 輔助 b(0) 參數估計。"""
+    data = request.get_json(force=True)
+    agent_name = data.get("agent_name", "")
+    agent_type = data.get("agent_type", "media")
+    topic = data.get("topic", "")
+    texts = data.get("texts", [])
+    dimension_labels = data.get("dimension_labels")
+
+    if not agent_name or not topic:
+        return jsonify(error="agent_name and topic are required"), 400
+    if not texts:
+        return jsonify(error="texts array is required (at least 1 article)"), 400
+
+    from globeedge.services.belief_estimator import BeliefEstimator
+
+    estimator = BeliefEstimator()
+    result = estimator.estimate(
+        agent_name=agent_name,
+        agent_type=agent_type,
+        topic=topic,
+        texts=texts,
+        dimension_labels=dimension_labels,
+    )
+
+    return jsonify({
+        "vector": result.vector,
+        "confidence": result.confidence,
+        "reasoning": result.reasoning,
+        "sources": result.sources,
+        "model": result.model,
+    })
+
+
 @bp.get("/edges/matrix")
 def get_matrix():
     """回傳指定 project 的 W 矩陣（僅目前有效的邊）。"""

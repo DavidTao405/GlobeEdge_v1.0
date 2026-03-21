@@ -6,6 +6,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore, AGENT_TYPES, AGENT_DOMAINS } from '../stores/projectStore'
+import { api } from '../lib/api'
 import AgentRadarChart from '../components/AgentRadarChart.vue'
 
 const route = useRoute()
@@ -20,6 +21,14 @@ const form = ref({
   domain: 'news',
   belief_init: [0, 0, 0, 0, 0, 0, 0, 0],
 })
+
+// AI 估計
+const aiTopic = ref('')
+const aiTexts = ref('')
+const aiEstimating = ref(false)
+const aiSuggested = ref<number[] | null>(null)
+const aiReasoning = ref('')
+const aiConfidence = ref(0)
 
 const selectedAgent = ref<number | null>(null)
 const selectedBeliefs = computed(() => {
@@ -40,7 +49,44 @@ async function handleCreate() {
     ...form.value,
   })
   form.value = { name: '', type: 'media', domain: 'news', belief_init: [0, 0, 0, 0, 0, 0, 0, 0] }
+  aiSuggested.value = null
+  aiReasoning.value = ''
   showForm.value = false
+}
+
+async function handleAIEstimate() {
+  if (!form.value.name.trim() || !aiTopic.value.trim()) return
+  const texts = aiTexts.value.split('\n').filter(t => t.trim())
+  if (!texts.length) return
+
+  aiEstimating.value = true
+  aiSuggested.value = null
+  try {
+    const res = await api.post<{
+      vector: number[]
+      confidence: number
+      reasoning: string
+    }>('/agents/estimate-belief', {
+      agent_name: form.value.name,
+      agent_type: form.value.type,
+      topic: aiTopic.value,
+      texts,
+      dimension_labels: store.dimensionLabels,
+    })
+    aiSuggested.value = res.vector
+    aiConfidence.value = res.confidence
+    aiReasoning.value = res.reasoning
+  } catch (e: any) {
+    aiReasoning.value = `Error: ${e.message}`
+  } finally {
+    aiEstimating.value = false
+  }
+}
+
+function acceptAISuggestion() {
+  if (aiSuggested.value) {
+    form.value.belief_init = [...aiSuggested.value]
+  }
 }
 
 function selectAgent(i: number) {
@@ -99,14 +145,65 @@ const typeColors: Record<string, string> = {
                 <span class="dim-idx">{{ i }}</span>
                 {{ label }}
                 <span class="slider-val">{{ form.belief_init[i].toFixed(2) }}</span>
+                <span
+                  v-if="aiSuggested && aiSuggested[i] !== undefined"
+                  class="ai-dot"
+                  :style="{ left: ((aiSuggested[i] + 1) / 2 * 100) + '%' }"
+                  :title="'AI suggests: ' + aiSuggested[i].toFixed(2)"
+                >
+                  ●
+                </span>
               </label>
-              <input
-                type="range"
-                v-model.number="form.belief_init[i]"
-                min="-1" max="1" step="0.05"
-              />
+              <div class="slider-container">
+                <input
+                  type="range"
+                  v-model.number="form.belief_init[i]"
+                  min="-1" max="1" step="0.05"
+                />
+              </div>
             </div>
           </div>
+
+          <!-- AI 估計區 -->
+          <div class="ai-section">
+            <div class="ai-header">🤖 AI Belief Estimation</div>
+            <div class="form-row">
+              <label>Topic</label>
+              <input v-model="aiTopic" class="input" placeholder="e.g. 台灣能源政策" />
+            </div>
+            <div class="form-row">
+              <label>Reference Texts (one per line)</label>
+              <textarea
+                v-model="aiTexts"
+                class="input textarea"
+                rows="3"
+                placeholder="貼入相關新聞標題或摘要..."
+              />
+            </div>
+            <div class="ai-actions">
+              <button
+                class="btn btn-ai"
+                :disabled="aiEstimating || !form.name.trim() || !aiTopic.trim()"
+                @click="handleAIEstimate"
+              >
+                {{ aiEstimating ? '⏳ Estimating...' : '🤖 AI Estimate' }}
+              </button>
+              <button
+                v-if="aiSuggested"
+                class="btn btn-accept"
+                @click="acceptAISuggestion"
+              >
+                ✅ Accept Suggestion
+              </button>
+            </div>
+            <div v-if="aiReasoning" class="ai-result">
+              <div v-if="aiConfidence" class="ai-confidence">
+                Confidence: {{ (aiConfidence * 100).toFixed(0) }}%
+              </div>
+              <div class="ai-reasoning">{{ aiReasoning }}</div>
+            </div>
+          </div>
+
           <button class="btn btn-primary" :disabled="!form.name.trim()" @click="handleCreate">
             Add Agent
           </button>
@@ -201,4 +298,18 @@ input[type="range"] { width: 100%; accent-color: #3b82f6; }
 .btn-primary:hover:not(:disabled) { background: #2563eb; }
 .btn-sm { padding: 5px 12px; font-size: 11px; }
 .muted { color: var(--text-secondary); font-size: 13px; padding: 20px 0; }
+.slider-container { position: relative; }
+.ai-dot { position: absolute; color: #f59e0b; font-size: 8px; top: -2px; transform: translateX(-50%); pointer-events: none; z-index: 1; }
+.ai-section { margin: 16px 0; padding: 14px; background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 8px; }
+.ai-header { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: #f59e0b; }
+.textarea { resize: vertical; font-size: 12px; min-height: 60px; font-family: inherit; }
+.ai-actions { display: flex; gap: 8px; margin-top: 8px; }
+.btn-ai { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; padding: 6px 16px; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-ai:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-ai:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-accept { background: #10b981; color: #fff; padding: 6px 16px; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-accept:hover { background: #059669; }
+.ai-result { margin-top: 10px; padding: 8px 12px; background: var(--card-bg); border-radius: 6px; font-size: 12px; }
+.ai-confidence { color: #f59e0b; font-weight: 600; font-family: 'IBM Plex Mono', monospace; margin-bottom: 4px; }
+.ai-reasoning { color: var(--text-secondary); }
 </style>
