@@ -10,11 +10,12 @@
 
 | 項目 | 數值 |
 |---|---|
-| 原始碼檔案 | 76 |
-| 總程式碼行數 | 8,542 |
-| Git commits | 7 |
+| 原始碼檔案 | 83 |
+| 總程式碼行數 | 10,180 |
+| Git commits | 12 |
 | Python 套件 | `globeedge/` |
 | 測試 | 47/47 passing (0.78s) |
+| 心理機制驗證 | 8/8 passing |
 | 前端 TypeScript 錯誤 | 0 |
 
 ---
@@ -44,8 +45,28 @@
 | Phase 3 | 爬蟲層 | ✅ 完成 | PTT, Bluesky, RSS, 金融爬蟲 + APScheduler |
 | Phase 4 | 地緣政治訊號 | ✅ 完成 | USGS, GDELT, ImpactMapper, signal_scheduler |
 | Phase 5 | 仿真佇列 + GPU | ✅ 完成 | Celery task, torch.bmm GPU batching, Redis 進度 |
-| Phase 6 | 前端儀表板 | ✅ 完成 | 結果展示 + 5 頁設計流程 + AI 輔助 b(0) 估計 |
-| Phase 7 | 整合測試與校準 | ✅ 完成 | Granger Causality, EWS backtest, alpha=0.3 校準 |
+| Phase 6 | 前端儀表板 | ✅ 完成 | 結果展示 + 設計流程 + AI b(0) 估計 + What If |
+| Phase 7 | 整合測試與校準 | ✅ 完成 | Granger Causality, EWS backtest, alpha=0.3 |
+
+---
+
+## 心理機制擴展
+
+| Layer | 機制 | 狀態 | 關鍵驗證 |
+|---|---|---|---|
+| Layer 1 | Ebbinghaus 遺忘曲線 | ✅ | PTT 停電後恢復快 39% vs FJ |
+| Layer 2 | ELM 雙路徑說服 | ✅ | High inv decay=0.15 < Low inv decay=0.40 |
+| Layer 3 | 動機性推理 (Backfire) | ✅ | 反核↔擁核影響力降 98.1% |
+| Layer 4 | System 1/2 雙歷程 | ✅ | S1(emo=0.8) 衰退快於 S2(emo=0.2) |
+
+```python
+PsychologyConfig(
+    use_forgetting=True,           # Ebbinghaus
+    use_elm=True,                  # ELM 雙路徑
+    use_motivated_reasoning=True,  # Backfire Effect
+    use_dual_process=True,         # System 1/2
+)
+```
 
 ---
 
@@ -53,168 +74,122 @@
 
 ```
 globeedge/
-├── core/                    # 數學核心（零外部依賴）
-│   ├── belief_state.py      #   BeliefState (frozen dataclass)
-│   ├── fj_engine.py         #   Friedkin-Johnsen 引擎
-│   ├── monte_carlo.py       #   MC runner + MoE 分層噪聲
-│   ├── ews_monitor.py       #   MoE 多專家 EWS (Welford z-score)
-│   └── distribution.py      #   SimulationDistribution (CI, percentile)
+├── core/                    # 數學核心
+│   ├── belief_state.py      #   BeliefState (frozen)
+│   ├── fj_engine.py         #   FJ 引擎 (4 層心理機制 flags)
+│   ├── monte_carlo.py       #   MC runner + MoE 噪聲
+│   ├── ews_monitor.py       #   MoE 多專家 EWS
+│   ├── distribution.py      #   SimulationDistribution
+│   ├── psychology.py        #   4 層心理機制
+│   └── intervention.py      #   What If 介入引擎
 │
 ├── models/                  # SQLAlchemy ORM (7 實體)
-│   ├── project.py           #   專案設定
-│   ├── agent.py             #   Agent 節點
-│   ├── influence_edge.py    #   W 矩陣邊 (含部分索引)
-│   ├── issue_dimension.py   #   議題維度定義
-│   ├── external_event.py    #   外部事件 (source_type 欄位)
-│   ├── simulation_result.py #   仿真結果 (JSONB timesteps)
-│   └── ews_alert.py         #   EWS 警報記錄
+│   ├── project.py
+│   ├── agent.py             #   含 issue_involvement (ELM)
+│   ├── influence_edge.py
+│   ├── issue_dimension.py
+│   ├── external_event.py
+│   ├── simulation_result.py
+│   └── ews_alert.py
 │
 ├── api/                     # Flask Blueprint
-│   ├── projects.py          #   POST/GET/PATCH/DELETE /api/projects
-│   ├── simulations.py       #   POST + status (Redis-first) + result
-│   └── agents.py            #   POST agents + edges + matrix + AI estimate
+│   ├── projects.py
+│   ├── simulations.py       #   含 POST /{id}/whatif
+│   └── agents.py            #   含 POST /estimate-belief
 │
 ├── services/                # 業務服務
-│   └── belief_estimator.py  #   AI 輔助 b(0) 估計 (Ollama qwen3.5:9b)
+│   ├── belief_estimator.py  #   AI b(0) 估計 (Ollama)
+│   └── message_analyzer.py  #   訊息情緒性分析 (System 1/2)
 │
-├── crawler/                 # 輿論爬蟲（W 矩陣資料源）
-│   ├── ptt_crawler.py       #   PTT 八卦/政黑板 (curl_cffi TLS)
-│   ├── bluesky_crawler.py   #   Bluesky AT Protocol + 帳號探勘
-│   ├── news_crawler.py      #   RSS + Crawl4AI 新聞引用
-│   ├── financial_crawler.py #   金融文件 LLM (成本上限保護)
-│   └── scheduler.py         #   APScheduler (PTT 8h, RSS 6h, Bluesky daily)
+├── crawler/                 # 輿論爬蟲
+│   ├── ptt_crawler.py
+│   ├── bluesky_crawler.py
+│   ├── news_crawler.py
+│   ├── financial_crawler.py
+│   ├── emotionality_tagger.py  # PTT 情緒標記 → Redis
+│   └── scheduler.py
 │
-├── signals/                 # 地緣政治物理訊號（ExternalEvent）
-│   ├── usgs_signal.py       #   台灣地震 (M≥4.5)
-│   ├── gdelt_signal.py      #   GDELT 負面新聞 (rate limit 重試)
-│   ├── impact_mapper.py     #   4 個靜態方法 → 8 維 impact_vector
-│   └── signal_scheduler.py  #   USGS 1h + GDELT 6h
+├── signals/                 # 地緣政治訊號
+│   ├── usgs_signal.py
+│   ├── gdelt_signal.py
+│   ├── impact_mapper.py
+│   └── signal_scheduler.py
 │
 ├── scenarios/               # 6 個議題情境
-│   ├── base.py              #   Scenario / AgentDef / EventDef 基類
+│   ├── base.py
 │   ├── energy.py            #   ①  台灣能源政策
-│   ├── ai_regulation.py     #   ②  AI 監管與就業衝擊
-│   ├── geopolitics.py       #   ③  地緣政治與戰亂溢出
-│   ├── trade_war.py         #   ④  美中貿易戰 2.0
-│   ├── iran_war.py          #   ⑤★ 美伊戰爭（即時議題）
-│   └── recall.py            #   ⑥★ 全台大罷免潮（即時議題）
+│   ├── ai_regulation.py     #   ②  AI 監管
+│   ├── geopolitics.py       #   ③  地緣政治
+│   ├── trade_war.py         #   ④  貿易戰
+│   ├── iran_war.py          #   ⑤★ 美伊戰爭
+│   └── recall.py            #   ⑥★ 大罷免潮
 │
-├── tasks/                   # Celery 仿真佇列
+├── tasks/                   # Celery
 │   ├── celery_app.py
 │   └── simulation_task.py
 │
-├── app.py                   # Flask 應用初始化
-└── db.py                    # SQLAlchemy 實例
+├── app.py
+└── db.py
 
 frontend/src/
-├── views/                   # 7 個頁面
-│   ├── ProjectListPage.vue  #   /projects — 專案管理
-│   ├── DimensionPage.vue    #   /projects/:id/dimensions
-│   ├── AgentDesignPage.vue  #   /projects/:id/agents (雷達圖 + AI 估計)
-│   ├── EdgeDesignPage.vue   #   /projects/:id/edges (W 熱圖)
-│   ├── EventDesignPage.vue  #   /projects/:id/events + Run Simulation
-│   └── ResultDashboardPage.vue  # /dashboard — 結果展示
-├── components/
-│   ├── AgentRadarChart.vue  #   D3 雷達圖 (8 維)
-│   ├── RiskGauge.vue        #   D3 弧形儀表
-│   ├── EWSChart.vue         #   Observable Plot 時序圖
-│   ├── BeliefChart.vue      #   Observable Plot 信念圖
-│   └── ProgressBar.vue      #   仿真進度條
-├── stores/
-│   ├── projectStore.ts      #   專案/Agent/Edge/Event CRUD
-│   └── simulationStore.ts   #   仿真提交+輪詢
-└── lib/
-    └── api.ts               #   API client
+├── views/                   # 8 個頁面
+│   ├── ProjectListPage.vue  #   含心理機制 checkboxes
+│   ├── DimensionPage.vue
+│   ├── AgentDesignPage.vue  #   含 AI 估計 + 雷達圖
+│   ├── EdgeDesignPage.vue   #   含 W 熱圖
+│   ├── EventDesignPage.vue  #   含 Run Simulation
+│   ├── WhatIfPage.vue       #   反事實分析
+│   └── ResultDashboardPage.vue
+├── components/              #   AgentRadarChart, RiskGauge, EWSChart...
+├── stores/                  #   projectStore, simulationStore
+└── lib/api.ts
 
 scripts/
-├── start_api.py             # 啟動 Flask API
-├── start_crawlers.py        # 啟動爬蟲 + 訊號排程
-├── init_db.py               # 初始化 DB schema + 驗證
-├── calibrate.py             # Granger Causality 校準
-├── backtest.py              # EWS 歷史 backtest
-└── run_scenario.py          # 議題情境仿真執行
-
-tests/test_core/             # 47 個單元測試
-├── test_belief_state.py     #   5 tests
-├── test_distribution.py     #   6 tests
-├── test_ews_monitor.py      #   15 tests (含 MoE)
-├── test_fj_engine.py        #   9 tests
-└── test_monte_carlo.py      #   12 tests (含 MoE 噪聲)
+├── start_api.py             # Flask API 啟動
+├── start_crawlers.py        # 爬蟲+訊號排程啟動
+├── init_db.py
+├── calibrate.py             # Granger Causality
+├── backtest.py              # EWS backtest
+├── run_scenario.py          # 情境仿真
+├── test_psychology.py       # 心理機制驗證 (Layer 1-3)
+└── test_dual_process.py     # System 1/2 驗證 (Layer 4)
 ```
 
 ---
 
 ## 校準結果 (Phase 7)
 
-### Granger Causality
-
-| 歷史事件 | 顯著邊 (p<0.1) | 最佳 alpha | MSE |
+| 歷史事件 | 顯著邊 | alpha | MSE |
 |---|---|---|---|
-| 花蓮 M7.2 地震 (2024-04) | 7 | 0.3 | 0.0077 |
-| 台灣總統大選 (2024-01) | 5 | 0.3 | 0.0110 |
-| 裴洛西訪台 (2022-08) | 13 | 0.3 | 0.0074 |
-
-**核心發現：最佳 alpha = 0.3**（台灣社會個體固有信念權重高於社會影響）
-
-### EWS Backtest
-
-| 事件 | Variance 暴增倍率 | AUC | 顯著性 |
-|---|---|---|---|
-| 花蓮地震 | 16.5x | 563 | ✅ significant |
-| 台灣大選 | 11.9x | 577 | ✅ significant |
-| 裴洛西訪台 | 14.6x | 833 | ✅ significant |
+| 花蓮 M7.2 地震 | 7 | 0.3 | 0.0077 |
+| 台灣總統大選 | 5 | 0.3 | 0.0110 |
+| 裴洛西訪台 | 13 | 0.3 | 0.0074 |
 
 ---
 
 ## 六議題仿真結果
 
-| # | 議題 | 類型 | λ_max | EWS 最高等級 | 最強極化維度 | spread |
-|---|---|---|---|---|---|---|
-| 5 | 美伊戰爭 | ★即時 | **0.791** | high | 經濟焦慮度 | 0.566 |
-| 6 | 大罷免潮 | ★即時 | 0.752 | **critical** | 政府信任度 | **0.881** |
-| 1 | 能源政策 | backtest | 0.760 | high | 核電接受度 | **1.015** |
-| 2 | AI 監管 | backtest | 0.726 | high | AI監管支持度 | 0.812 |
-| 3 | 地緣政治 | backtest | 0.745 | medium | 政府信任度 | 0.689 |
-| 4 | 貿易戰 | backtest | 0.634 | medium | 對美信任度 | 0.483 |
+| # | 議題 | λ_max | EWS | 極化 spread |
+|---|---|---|---|---|
+| 5 | 美伊戰爭 ★ | **0.791** | high | 0.566 |
+| 6 | 大罷免潮 ★ | 0.752 | **critical** | **0.881** |
+| 1 | 能源政策 | 0.760 | high | **1.015** |
+| 2 | AI 監管 | 0.726 | high | 0.812 |
+| 3 | 地緣政治 | 0.745 | medium | 0.689 |
+| 4 | 貿易戰 | 0.634 | medium | 0.483 |
 
 ---
 
 ## 服務運行狀態
 
-| 服務 | 啟動方式 | 預設位址 |
+| 服務 | 啟動方式 | 位址 |
 |---|---|---|
 | PostgreSQL | `docker compose up -d` | 127.0.0.1:5432 |
 | Redis | `docker compose up -d` | 127.0.0.1:6379 |
 | Flask API | `python scripts/start_api.py` | 0.0.0.0:5001 |
-| 爬蟲+訊號排程 | `python scripts/start_crawlers.py` | 背景 (7 jobs) |
-| Ollama LLM | 系統服務 | localhost:11434 |
-| 前端 dev | `cd frontend && npm run dev` | localhost:5173 |
-
-### 排程 Jobs
-
-| Job ID | 頻率 | 資料源 |
-|---|---|---|
-| `news_crawler_daily` | 每天 02:00 | Crawl4AI 新聞 |
-| `rss_crawler_6h` | 每 6 小時 | RSS |
-| `ptt_crawler_8h` | 每 8 小時 | **PTT（主力）** |
-| `bluesky_daily` | 每天 03:00 | Bluesky |
-| `financial_daily` | 每天 04:00 | 金融 LLM |
-| `usgs_hourly` | 每小時 | USGS 地震 |
-| `gdelt_6h` | 每 6 小時 | GDELT 新聞 |
-
----
-
-## 資料庫 (PostgreSQL)
-
-| 表 | 說明 | 關鍵欄位 |
-|---|---|---|
-| `projects` | 專案設定 | alpha, mc_runs, sim_horizon |
-| `agents` | Agent 節點 | type, domain, belief_init (FLOAT[]) |
-| `influence_edges` | W 矩陣邊 | weight, weight_type, **partial index on valid_until IS NULL** |
-| `issue_dimensions` | 議題維度 | index, name, range_min/max |
-| `external_events` | 外部事件 | **source_type** (ais\|gdelt\|usgs\|adsb\|news), impact_vector (FLOAT[]) |
-| `simulation_results` | 仿真結果 | **timesteps (JSONB)**, elapsed_sec |
-| `ews_alerts` | EWS 警報 | alert_type, severity, z_score |
+| 爬蟲+訊號 | `python scripts/start_crawlers.py` | 背景 7 jobs |
+| Ollama | 系統服務 | localhost:11434 |
+| 前端 | `cd frontend && npm run dev` | localhost:5173 |
 
 ---
 
@@ -222,37 +197,24 @@ tests/test_core/             # 47 個單元測試
 
 | 項目 | 狀態 |
 |---|---|
-| `.env` 在 `.gitignore` | ✅ |
-| `.claude/` 在 `.gitignore` | ✅ |
-| git history 無 .env | ✅ |
-| LLM 呼叫上限 (MAX=20/run) | ✅ |
-| 月預算硬限 ($10 USD) | ✅ |
-| PostgreSQL 綁定 localhost | ✅ |
-| AIS 單一連線守護 | ✅ |
-
----
-
-## 推薦參數
-
-```python
-PROJECT_DEFAULTS = {
-    "alpha":       0.3,    # 台灣社會校準值
-    "mc_runs":     10000,
-    "sim_horizon": 30,
-    "noise_level": 0.05,
-}
-```
+| `.env` + `.claude/` 在 .gitignore | ✅ |
+| LLM 呼叫上限 (20/run, $10/month) | ✅ |
+| PostgreSQL/Redis 綁定 localhost | ✅ |
 
 ---
 
 ## Git History
 
 ```
+cb1e854  System 1/2 dual process: message analyzer + emotionality tagger
+1a374ff  Psychology mechanisms: Ebbinghaus + ELM + Motivated Reasoning
+76eda17  What If counterfactual analysis: intervention engine + API + frontend
+c05919f  Update project-state.md, todo.md, add README.md
 4339249  AI-assisted belief estimation via Ollama Qwen3.5
 ae41ce9  Add project-state.md
 7a3baf4  Rename project: WorldEdge → GlobeEdge
 f3b848b  Frontend: full scenario design workflow (5 new pages)
-1d69354  Add real-time scenarios: Iran war impact + Taiwan recall movement
-ba7b306  Phase 3-7: crawlers, signals, MoE core, calibration, 4 scenario analyses
+1d69354  Add real-time scenarios: Iran war + Taiwan recall
+ba7b306  Phase 3-7: crawlers, signals, MoE core, calibration, 4 scenarios
 0a0a956  Initial commit
 ```
