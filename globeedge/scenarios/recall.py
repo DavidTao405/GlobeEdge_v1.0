@@ -100,6 +100,16 @@ EVENTS = [
         impact_vector=[-0.4, -0.3, -0.4, 0.2, 0.5, 0.2, -0.7, 0.0],
         description="罷免成立 → 政府信任崩跌 群體凝聚度最低點",
     ),
+    EventDef(
+        title="WBC Team Taiwan + 島嶼天光哏化事件",
+        domain="social",
+        impact_vector=[0.0, 0.0, 0.1, 0.0, -0.2, -0.1, 0.3, 0.0],
+        description=(
+            "WBC 全民歡樂 → 群體凝聚度短暫↑ 罷免認同度↓ 政治改革意願↓ "
+            "注意力被搶走，政治動員效果被稀釋。"
+            "迷因傳播快(3x) 但衰退也快(S≈1)，不觸發 Backfire"
+        ),
+    ),
 ]
 
 
