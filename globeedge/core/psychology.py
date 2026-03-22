@@ -345,6 +345,7 @@ class PsychologyConfig:
     use_motivated_reasoning: bool = False
     use_dual_process: bool = False
     use_accumulator: bool = False   # Layer 5: 持續事件累積
+    use_crisis_dynamics: bool = False  # Layer 6: CrisisAwareFJ (dynamic alpha + b0 drift)
 
     # Ebbinghaus 參數
     memory_stability_override: dict[str, float] = field(default_factory=dict)
@@ -363,7 +364,7 @@ class PsychologyConfig:
     def any_enabled(self) -> bool:
         return (self.use_forgetting or self.use_elm
                 or self.use_motivated_reasoning or self.use_dual_process
-                or self.use_accumulator)
+                or self.use_accumulator or self.use_crisis_dynamics)
 
     def to_dict(self) -> dict:
         return {
@@ -372,6 +373,7 @@ class PsychologyConfig:
             "use_motivated_reasoning": self.use_motivated_reasoning,
             "use_dual_process": self.use_dual_process,
             "use_accumulator": self.use_accumulator,
+            "use_crisis_dynamics": self.use_crisis_dynamics,
             "identity_threshold": self.identity_threshold,
             "backfire_k": self.backfire_k,
             "message_emotionality": self.message_emotionality,

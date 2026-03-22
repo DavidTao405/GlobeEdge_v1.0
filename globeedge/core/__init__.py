@@ -6,6 +6,10 @@ from .ews_monitor import EWSAlert, EWSMonitor, MoEEWSMonitor
 from .fj_engine import FJEngine
 from .intervention import Intervention, InterventionEngine, compute_whatif_diff
 from .monte_carlo import AgentNoiseProfile, MonteCarloRunner
+from .crisis_dynamics import (
+    CrisisAwareFJEngine, CrisisConfig, CrisisStepResult,
+    compute_dynamic_alpha, crisis_fj_step, drift_b0, update_crisis_intensity,
+)
 from .psychology import (
     EventAccumulator, PsychologyConfig, apply_forgetting,
     apply_forgetting_with_accumulator, apply_motivated_reasoning,
