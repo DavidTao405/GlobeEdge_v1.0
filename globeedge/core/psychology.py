@@ -202,13 +202,149 @@ def dual_process_update(
     return np.clip(result, -1.0, 1.0)
 
 
+# ── Layer 5: EventAccumulator 持續事件模式 ─────────────────
+
+@dataclass
+class CrisisEvent:
+    """危機序列中的單一事件。"""
+    day: int
+    impact_vector: np.ndarray  # (n_dims,)
+    title: str = ""
+
+
+class EventAccumulator:
+    """持續危機下，相關事件的衝擊累積而非衰退。
+
+    事件類型與信念演化模式：
+      一次性衝擊（地震、選舉）  → 回歸型 → FJ + Ebbinghaus
+      持續危機（戰爭、長期政策）→ 累積型 → EventAccumulator
+      週期性事件（定期法說）    → 震盪型 → 待研究
+
+    累積條件：
+      1. 與前一事件同屬一個「危機序列」
+      2. 時間間隔 < max_gap 天
+      3. impact_vector 方向一致（cosine > alignment_threshold）
+    """
+
+    def __init__(
+        self,
+        max_gap: int = 7,
+        alignment_threshold: float = 0.3,
+        accumulation_decay: float = 0.95,
+    ):
+        self.max_gap = max_gap
+        self.alignment_threshold = alignment_threshold
+        self.accumulation_decay = accumulation_decay
+        self._history: list[CrisisEvent] = []
+        self._accumulated: np.ndarray | None = None
+
+    def _cosine_sim(self, a: np.ndarray, b: np.ndarray) -> float:
+        """兩個向量的 cosine 相似度。"""
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+        if norm_a < 1e-9 or norm_b < 1e-9:
+            return 0.0
+        return float(np.dot(a, b) / (norm_a * norm_b))
+
+    def should_accumulate(self, day: int, impact: np.ndarray) -> bool:
+        """判斷新事件是否應累積。"""
+        if not self._history:
+            return False
+        last = self._history[-1]
+        gap = day - last.day
+        alignment = self._cosine_sim(last.impact_vector, impact)
+        return gap <= self.max_gap and alignment > self.alignment_threshold
+
+    def process_event(
+        self, day: int, impact: np.ndarray, title: str = "",
+    ) -> np.ndarray:
+        """處理一個事件，回傳有效 impact（可能是累積的）。
+
+        Returns:
+            effective_impact: 累積模式下 = 前次累積 × decay + 新 impact
+                              非累積模式下 = 原始 impact
+        """
+        event = CrisisEvent(day=day, impact_vector=impact.copy(), title=title)
+
+        if self.should_accumulate(day, impact):
+            # 累積：前次累積值 × 衰減 + 新衝擊
+            if self._accumulated is not None:
+                self._accumulated = (
+                    self._accumulated * self.accumulation_decay + impact
+                )
+            else:
+                self._accumulated = impact.copy()
+            self._history.append(event)
+            return self._accumulated.copy()
+        else:
+            # 新危機序列：重置
+            self._history = [event]
+            self._accumulated = impact.copy()
+            return impact.copy()
+
+    def get_suppression_mask(self) -> np.ndarray | None:
+        """回傳累積中的維度遮罩。
+
+        累積中的維度不應被 Ebbinghaus 衰退。
+        Returns:
+            (n_dims,) bool array，True = 該維度正在累積，抑制遺忘
+        """
+        if self._accumulated is None:
+            return None
+        # 有顯著累積值的維度
+        return np.abs(self._accumulated) > 0.05
+
+    @property
+    def is_in_crisis(self) -> bool:
+        """是否正處於持續危機中。"""
+        return len(self._history) >= 2
+
+    @property
+    def crisis_length(self) -> int:
+        """目前危機序列的長度。"""
+        return len(self._history)
+
+    def reset(self):
+        """重置累積器。"""
+        self._history.clear()
+        self._accumulated = None
+
+
+def apply_forgetting_with_accumulator(
+    b_next: np.ndarray,
+    b0: np.ndarray,
+    agent_types: list[str],
+    accumulator: EventAccumulator | None = None,
+) -> np.ndarray:
+    """Ebbinghaus 遺忘 + 累積事件抑制。
+
+    累積中的維度不被 Ebbinghaus 拉回 b(0)。
+    """
+    result = b_next.copy()
+    suppression = accumulator.get_suppression_mask() if accumulator else None
+
+    for i, agent_type in enumerate(agent_types):
+        if i >= result.shape[0]:
+            break
+        retention = compute_retention(agent_type)
+
+        for d in range(result.shape[1]):
+            if suppression is not None and d < len(suppression) and suppression[d]:
+                # 此維度正在累積 → 不衰退
+                continue
+            result[i, d] = b0[i, d] + retention * (b_next[i, d] - b0[i, d])
+
+    return result
+
+
 @dataclass
 class PsychologyConfig:
     """心理機制開關。全部預設關閉，向後相容。"""
     use_forgetting: bool = False
     use_elm: bool = False
     use_motivated_reasoning: bool = False
-    use_dual_process: bool = False  # System 1/2（長期）
+    use_dual_process: bool = False
+    use_accumulator: bool = False   # Layer 5: 持續事件累積
 
     # Ebbinghaus 參數
     memory_stability_override: dict[str, float] = field(default_factory=dict)
@@ -220,9 +356,14 @@ class PsychologyConfig:
     identity_threshold: float = 0.5
     backfire_k: float = 3.0
 
+    # EventAccumulator 參數
+    accumulator_max_gap: int = 7
+    accumulator_alignment: float = 0.3
+
     def any_enabled(self) -> bool:
         return (self.use_forgetting or self.use_elm
-                or self.use_motivated_reasoning or self.use_dual_process)
+                or self.use_motivated_reasoning or self.use_dual_process
+                or self.use_accumulator)
 
     def to_dict(self) -> dict:
         return {
@@ -230,6 +371,7 @@ class PsychologyConfig:
             "use_elm": self.use_elm,
             "use_motivated_reasoning": self.use_motivated_reasoning,
             "use_dual_process": self.use_dual_process,
+            "use_accumulator": self.use_accumulator,
             "identity_threshold": self.identity_threshold,
             "backfire_k": self.backfire_k,
             "message_emotionality": self.message_emotionality,
