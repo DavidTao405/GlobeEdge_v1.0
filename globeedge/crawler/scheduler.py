@@ -59,16 +59,24 @@ def _run_rss_crawler():
 
 
 def _run_ptt_crawler():
-    """PTT 八卦/政黑板推噓分析（主力資料源）。"""
+    """PTT 八卦/政黑板推噓分析（主力資料源），含 DB 持久化。"""
     from globeedge.crawler.ptt_crawler import run_ptt_pipeline
 
     logger.info("[scheduler] starting PTT pipeline")
-    edges = run_ptt_pipeline(
-        boards=["Gossiping", "HatePolitics"],
-        pages_per_board=3,
-        min_interactions=5,
-    )
-    logger.info("[scheduler] PTT done, %d edges", len(edges))
+    # 需要 Flask app context 才能寫 DB
+    try:
+        from globeedge.app import create_app
+        app = create_app()
+        with app.app_context():
+            edges = run_ptt_pipeline(
+                boards=["Gossiping", "HatePolitics"],
+                pages_per_board=3,
+                min_interactions=3,
+                persist_to_db=True,
+            )
+            logger.info("[scheduler] PTT done, %d edges, articles persisted", len(edges))
+    except Exception:
+        logger.exception("[scheduler] PTT pipeline failed")
 
 
 def _run_bluesky_crawler():
