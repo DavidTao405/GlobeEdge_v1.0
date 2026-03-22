@@ -28,6 +28,11 @@
 - [x] WhatIfPage 反事實分析
 - [x] 心理機制 checkboxes
 
+### 驗證層次 3 & 4
+- [x] 敏感度分析（26 參數組合，Spread 變異 2.4% → ROBUST）
+- [x] 心理參數校準 dry-run（curve_fit R²>0.7，forum/demo ✅，kol ⚠️）
+- [x] 預測性驗證 dry-run（方向準確率 0% → 識別出 alpha=0.3 可能過低）
+
 ### 安全 / 基礎
 - [x] .env + .claude/ 在 .gitignore
 - [x] LLM 成本上限（20/run, $10/month）
@@ -38,12 +43,13 @@
 
 ## 🔲 待辦
 
-### P0 — 即時驗證
-- [ ] 議題 5 (美伊戰爭) 接入真實 PTT 資料作為 ground truth
+### P0 — 即時驗證（用真實 PTT 資料）
+- [ ] predictive_validation.py 接入真實 PTT 資料（非 dry-run）
+- [ ] calibrate_psychology.py 接入真實 PTT 資料（需 90 天累積）
+- [ ] 議題 5 (美伊戰爭) PTT 立場時間序列 vs 模型預測
 - [ ] 議題 6 (大罷免) PTT 政黑板即時驗證
-- [ ] 即時驗證框架：模型預測 vs 爬蟲真實資料比對腳本
-- [ ] 心理機制 + What If 的組合實驗
-  - 「啟用 Backfire 後，移除反核 KOL 的效果差多少？」
+- [ ] alpha 重新校準：dry-run 顯示 0.3 可能過低
+- [ ] 心理機制 + What If 組合實驗
 
 ### P1 — 訊號層擴充
 - [ ] AIS WebSocket 即時訊號 (aisstream.io)

@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-03-22T18:49:06.913875",
+  "mode": "dry_run",
+  "n_users": 30,
+  "fit_success_rate": "30/30",
+  "calibration": {
+    "forum": {
+      "n_users": 15,
+      "S_median": 2.05,
+      "S_mean": 1.99,
+      "S_std": 0.45,
+      "S_min": 0.89,
+      "S_max": 2.75,
+      "current_setting": 2.0,
+      "deviation_pct": 2.5,
+      "verdict": "✅ accurate"
+    },
+    "demographic": {
+      "n_users": 10,
+      "S_median": 4.48,
+      "S_mean": 5.16,
+      "S_std": 1.71,
+      "S_min": 2.82,
+      "S_max": 8.24,
+      "current_setting": 5.0,
+      "deviation_pct": 10.4,
+      "verdict": "✅ accurate"
+    },
+    "kol": {
+      "n_users": 5,
+      "S_median": 19.38,
+      "S_mean": 18.9,
+      "S_std": 6.63,
+      "S_min": 9.8,
+      "S_max": 28.83,
+      "current_setting": 15.0,
+      "deviation_pct": 29.2,
+      "verdict": "⚠️ needs adjustment"
+    }
+  }
+}
