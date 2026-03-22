@@ -265,11 +265,46 @@ def persist_edges(edges: list[dict], project_id: str) -> int:
     return written
 
 
+def persist_articles(articles: list[PttArticle], board: str = "") -> int:
+    """將 PTT 文章寫入 ptt_articles 表。
+
+    用 url 去重，避免重複寫入。
+    需在 Flask app context 中呼叫。
+    """
+    from globeedge.db import db
+    from globeedge.models import PttArticle as PttArticleModel
+
+    written = 0
+    for a in articles:
+        exists = PttArticleModel.query.filter_by(url=a.url).first()
+        if exists:
+            continue
+        record = PttArticleModel(
+            board=a.board or board,
+            url=a.url,
+            author=a.author,
+            title=a.title,
+            date_str=a.date,
+            push_count=a.push_count,
+            boo_count=a.boo_count,
+            arrow_count=a.arrow_count,
+            net_score=a.net_score,
+        )
+        db.session.add(record)
+        written += 1
+
+    if written > 0:
+        db.session.commit()
+    logger.info("ptt persisted %d new articles to DB", written)
+    return written
+
+
 def run_ptt_pipeline(
     boards: list[str] | None = None,
     pages_per_board: int = 3,
     min_interactions: int = 5,
     project_id: str | None = None,
+    persist_to_db: bool = False,
 ) -> list[dict]:
     """完整 pipeline：爬取看板 → 解析文章 → 抽取邊 → 正規化 → (寫入 DB)。
 
@@ -277,7 +312,8 @@ def run_ptt_pipeline(
         boards: 要爬的看板，預設 Gossiping + HatePolitics
         pages_per_board: 每個看板爬幾頁
         min_interactions: 最少互動數才解析單篇
-        project_id: 如有提供，寫入 DB
+        project_id: 如有提供，寫入影響力邊到 DB
+        persist_to_db: 是否將文章原始資料寫入 ptt_articles 表
     """
     if boards is None:
         boards = ["Gossiping", "HatePolitics"]
@@ -306,6 +342,11 @@ def run_ptt_pipeline(
                 )
 
     logger.info("total parsed articles: %d", len(all_articles))
+
+    # 寫入文章到 DB
+    if persist_to_db and all_articles:
+        n_articles = persist_articles(all_articles)
+        logger.info("ptt articles persisted: %d", n_articles)
 
     # 抽取邊
     all_edges = extract_influence_edges(all_articles)

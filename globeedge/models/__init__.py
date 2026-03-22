@@ -6,6 +6,7 @@ from .external_event import ExternalEvent
 from .influence_edge import InfluenceEdge
 from .issue_dimension import IssueDimension
 from .project import Project
+from .ptt_article import PttArticle
 from .simulation_result import SimulationResult
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "InfluenceEdge",
     "IssueDimension",
     "Project",
+    "PttArticle",
     "SimulationResult",
 ]
