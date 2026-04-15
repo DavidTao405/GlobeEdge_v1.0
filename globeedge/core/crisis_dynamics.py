@@ -43,6 +43,9 @@ class CrisisConfig:
     alpha_base: float = 0.3       # 平時 alpha
     alpha_crisis: float = 0.6     # 危機高峰 alpha（上限）
     crisis_decay: float = 0.05    # 每步危機強度自然衰退
+    # 註：TimesFM SEIR 實驗（experiment/crisis-decay-0.02 branch）建議改 0.02，
+    # 但 predictive_validation.py 使用原始 FJEngine 而非 CrisisAwareFJEngine，
+    # 改 crisis_decay 對該驗證無效。保持 0.05 直到有新實驗驗證。
     crisis_growth: float = 0.15   # 每個事件的危機強度增長
     b0_drift_rate: float = 0.15   # b(0) 漂移率（每步）
     crisis_threshold: float = 0.3 # 高於此強度才觸發 b(0) 漂移
