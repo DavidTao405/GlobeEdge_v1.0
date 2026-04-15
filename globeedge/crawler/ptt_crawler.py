@@ -11,6 +11,7 @@
 """
 
 import logging
+import os
 import re
 import time
 from collections import Counter, defaultdict
@@ -34,6 +35,9 @@ TARGET_BOARDS = {
 # 請求間隔（秒）
 REQUEST_DELAY = 0.5
 
+# 預設爬取頁數（可用環境變數 PTT_CRAWL_PAGES 覆蓋）
+DEFAULT_CRAWL_PAGES = int(os.environ.get("PTT_CRAWL_PAGES", "10"))
+
 # ── 解析 regex ────────────────────────────────────────────
 _RE_ARTICLE_LINK = re.compile(r'href="(/bbs/\w+/M\.\d+\.A\.\w+\.html)"')
 _RE_DELETED = re.compile(r"(已被刪除|本文已被)")
@@ -43,11 +47,11 @@ _RE_TITLE_TAG = re.compile(
 )
 _RE_META = re.compile(r'<span class="article-meta-value">([^<]+)</span>')
 _RE_PUSH = re.compile(
-    r'<span class="hl push-tag">(推|噓|→)\s*</span>'
+    r'<span class="[^"]*push-tag[^"]*">(推|噓|→)\s*</span>'
     r'<span class="f3 hl push-userid">([^<]+)</span>'
     r'<span class="f3 push-content">: ([^<]*)</span>'
 )
-_RE_PREV_PAGE = re.compile(r'href="/bbs/\w+/index(\d+)\.html"[^>]*>.*?上頁', re.DOTALL)
+_RE_PREV_PAGE = re.compile(r'href="/bbs/\w+/index(\d+)\.html"[^<]*&lsaquo;[^<]*上頁')
 
 
 @dataclass
@@ -72,22 +76,32 @@ class PttArticle:
         return self.push_count + self.boo_count + self.arrow_count
 
 
-def _fetch(url: str) -> str | None:
-    """用 curl_cffi 模擬 Chrome TLS 發送請求。"""
-    try:
-        r = cffi_requests.get(
-            url,
-            cookies={"over18": "1"},
-            impersonate="chrome",
-            timeout=15,
-        )
-        if r.status_code == 200:
-            return r.text
-        logger.warning("HTTP %d for %s", r.status_code, url)
-        return None
-    except Exception:
-        logger.exception("failed to fetch %s", url)
-        return None
+def _fetch(url: str, retries: int = 3) -> str | None:
+    """用 curl_cffi 模擬 Chrome TLS 發送請求，含重試。
+
+    PTT 偶爾 TLS reset（特別是八卦板），重試通常能解決。
+    """
+    for attempt in range(retries):
+        try:
+            r = cffi_requests.get(
+                url,
+                cookies={"over18": "1"},
+                impersonate="chrome",
+                timeout=15,
+            )
+            if r.status_code == 200:
+                return r.text
+            logger.warning("HTTP %d for %s", r.status_code, url)
+            return None
+        except Exception:
+            if attempt < retries - 1:
+                wait = 2 * (attempt + 1)
+                logger.warning("TLS error for %s, retry %d/%d in %ds",
+                               url, attempt + 1, retries, wait)
+                time.sleep(wait)
+            else:
+                logger.exception("failed to fetch %s after %d retries", url, retries)
+    return None
 
 
 def fetch_article_list(
@@ -299,38 +313,126 @@ def persist_articles(articles: list[PttArticle], board: str = "") -> int:
     return written
 
 
+def fetch_hot_articles(board: str) -> list[dict]:
+    """爬取看板 [爆] 文章（推文 > 100）。
+
+    PTT 搜尋 URL：/bbs/{board}/search?q=[爆]
+    """
+    search_url = f"{PTT_BASE}/bbs/{board}/search?q=%5B%E7%88%86%5D"
+    html = _fetch(search_url)
+    if not html:
+        return []
+
+    links = _RE_ARTICLE_LINK.findall(html)
+    articles = []
+    seen_urls = set()
+    for link in links:
+        url = f"{PTT_BASE}{link}"
+        if url not in seen_urls:
+            seen_urls.add(url)
+            articles.append({"url": url, "board": board, "nrec": 100})
+
+    logger.info("board %s: %d [爆] articles found", board, len(articles))
+    return articles
+
+
+def fetch_keyword_articles(
+    board: str, keywords: list[str], max_per_keyword: int = 20
+) -> list[dict]:
+    """用 PTT 搜尋功能抓特定關鍵字的文章。"""
+    articles = []
+    seen_urls = set()
+
+    for kw in keywords:
+        import urllib.parse
+        search_url = f"{PTT_BASE}/bbs/{board}/search?q={urllib.parse.quote(kw)}"
+        html = _fetch(search_url)
+        if not html:
+            continue
+
+        links = _RE_ARTICLE_LINK.findall(html)
+        count = 0
+        for link in links:
+            url = f"{PTT_BASE}{link}"
+            if url not in seen_urls and count < max_per_keyword:
+                seen_urls.add(url)
+                articles.append({"url": url, "board": board, "nrec": 0})
+                count += 1
+
+        logger.info("board %s keyword '%s': %d articles", board, kw, count)
+        time.sleep(REQUEST_DELAY)
+
+    return articles
+
+
 def run_ptt_pipeline(
     boards: list[str] | None = None,
-    pages_per_board: int = 3,
+    pages_per_board: int | None = None,
     min_interactions: int = 5,
     project_id: str | None = None,
     persist_to_db: bool = False,
+    include_hot: bool = True,
+    keywords: list[str] | None = None,
+    deep_mode: bool = False,
 ) -> list[dict]:
     """完整 pipeline：爬取看板 → 解析文章 → 抽取邊 → 正規化 → (寫入 DB)。
 
     Args:
         boards: 要爬的看板，預設 Gossiping + HatePolitics
-        pages_per_board: 每個看板爬幾頁
+        pages_per_board: 每個看板爬幾頁（None = 用環境變數 PTT_CRAWL_PAGES）
         min_interactions: 最少互動數才解析單篇
         project_id: 如有提供，寫入影響力邊到 DB
         persist_to_db: 是否將文章原始資料寫入 ptt_articles 表
+        include_hot: 是否額外抓 [爆] 文章
+        keywords: 額外搜尋的關鍵字（如 ["柯文哲", "京華城"]）
+        deep_mode: 深度模式（30 頁，重大事件觸發）
     """
     if boards is None:
         boards = ["Gossiping", "HatePolitics"]
 
+    if pages_per_board is None:
+        pages_per_board = 30 if deep_mode else DEFAULT_CRAWL_PAGES
+
     all_articles: list[PttArticle] = []
+    seen_urls: set[str] = set()
 
     for board in boards:
+        # 正常頁面爬取
         article_list = fetch_article_list(board, pages=pages_per_board)
 
-        # 只解析有足夠互動的文章
-        worth_parsing = [a for a in article_list if a.get("nrec", 0) >= min_interactions]
+        # [爆] 文章
+        if include_hot:
+            hot = fetch_hot_articles(board)
+            # 去重合併
+            for h in hot:
+                if h["url"] not in {a["url"] for a in article_list}:
+                    article_list.append(h)
+
+        # 關鍵字搜尋
+        if keywords:
+            kw_articles = fetch_keyword_articles(board, keywords)
+            for ka in kw_articles:
+                if ka["url"] not in {a["url"] for a in article_list}:
+                    article_list.append(ka)
+
+        # 只解析有足夠互動的文章（關鍵字文章不受 nrec 限制）
+        worth_parsing = []
+        for a in article_list:
+            if a.get("nrec", 0) >= min_interactions:
+                worth_parsing.append(a)
+            elif keywords and a["url"] not in seen_urls:
+                # 關鍵字文章不看 nrec，全部解析
+                worth_parsing.append(a)
+
         logger.info(
-            "board %s: %d articles, %d worth parsing (nrec >= %d)",
-            board, len(article_list), len(worth_parsing), min_interactions,
+            "board %s: %d articles total (%d pages + hot + keywords), %d worth parsing",
+            board, len(article_list), pages_per_board, len(worth_parsing),
         )
 
         for article_info in worth_parsing:
+            if article_info["url"] in seen_urls:
+                continue
+            seen_urls.add(article_info["url"])
             time.sleep(REQUEST_DELAY)
             article = parse_article(article_info["url"], board)
             if article and article.total_interactions > 0:

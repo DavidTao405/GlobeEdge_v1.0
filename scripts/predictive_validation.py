@@ -1,28 +1,27 @@
-"""預測性驗證 — 美伊戰爭即時 ground truth 比對。
+"""預測性驗證 — 用真實 PTT 資料比對 GlobeEdge 模型預測。
 
-用法:
-    python scripts/predictive_validation.py
-    python scripts/predictive_validation.py --dry-run   # 合成資料
-    python scripts/predictive_validation.py --output results/prediction.json
+Layer 4 驗證：模型在已知事件下的輿論走向預測 vs 真實 PTT 推噓方向。
 
-原理:
-    Layer 4 驗證：模型在已知事件下的輿論走向預測 vs 真實 PTT 資料。
+驗證時期：2026-03-26 到 2026-04-15（21 天）
+真實事件：
+    t=0   3/26  柯文哲京華城案一審判 17 年
+    t=4   3/30  鄭習會宣布：鄭麗文 4/7 訪中
+    t=15  4/10  鄭習會實際會面（習近平「一家人」）
+    t=18  4/13  黃國昌開除李貞秀黨籍
 
-設計:
-    訓練截止: 2026-02-27 (美伊戰爭爆發前一天)
-    預測期間: 2026-02-28 → 2026-03-22
-    輸入: 已知事件序列（空襲、封鎖海峽、油價 100 美元...）
-    驗證: 每日 PTT 平均立場 vs 模型預測的維度趨勢
-
-不求數值精確，只求方向性:
-    1. 方向一致性（Pearson 相關係數）
-    2. 事件反應時機
-    3. 哪個維度最準 / 最不準
+資料源：PTT HatePolitics + Gossiping（4,570 篇）
+驗證方法：
+    1. 按日期 × 議題關鍵字聚合 PTT 推噓比
+    2. push_ratio 轉換為信念方向訊號
+    3. 比對 GlobeEdge 仿真的信念趨勢
+    4. Q3: b(0) 隨機化敏感度分析
 """
 
+import argparse
 import json
 import logging
 import os
+import re
 import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -32,275 +31,340 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from globeedge.core import FJEngine, MonteCarloRunner
-from globeedge.core.psychology import PsychologyConfig, apply_forgetting, apply_motivated_reasoning
-from globeedge.scenarios.iran_war import build as build_scenario
+from globeedge.core.psychology import apply_forgetting, apply_motivated_reasoning
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
-# ── 已知事件序列 ──────────────────────────────────────────
+# ── 驗證時期 ─────────────────────────────────────────────
+START_DATE = datetime(2026, 3, 26)
+END_DATE = datetime(2026, 4, 16)  # exclusive
+HORIZON = (END_DATE - START_DATE).days - 1  # 20 天窗口 → 21 時步
 
-IRAN_WAR_TIMELINE = [
-    {"day": 0,  "date": "2026-02-28", "title": "美以發動 Epic Fury 空襲",
-     "impact": [0.0, -0.3, -0.1, 0.5, 0.1, -0.2, -0.1, 0.6]},
-    {"day": 2,  "date": "2026-03-02", "title": "伊朗封鎖霍木茲海峽",
-     "impact": [-0.2, -0.4, -0.3, 0.8, -0.2, -0.6, -0.3, 0.7]},
-    {"day": 3,  "date": "2026-03-03", "title": "卡達 LNG 設施遭攻擊",
-     "impact": [-0.1, -0.3, -0.2, 0.7, -0.1, -0.7, -0.2, 0.5]},
-    {"day": 8,  "date": "2026-03-08", "title": "布蘭特原油突破 100 美元",
-     "impact": [-0.3, -0.2, -0.5, 0.9, -0.1, -0.4, -0.4, 0.3]},
-    {"day": 10, "date": "2026-03-10", "title": "IEA 戰略儲備釋放",
-     "impact": [0.2, 0.1, 0.1, -0.3, 0.2, 0.3, 0.2, -0.1]},
-    {"day": 12, "date": "2026-03-12", "title": "台灣緊急能源應對措施",
-     "impact": [0.1, 0.0, 0.0, -0.2, 0.1, 0.2, 0.1, 0.0]},
+# ── 真實事件時程 ─────────────────────────────────────────
+# 每個 impact_vector 基於實際 PTT 推噓校準（geopolitics/recall scenario）
+REAL_TIMELINE = [
+    {"day": 0,  "date": "2026-03-26", "title": "柯文哲京華城一審 17 年",
+     "impact": [0.15, 0.0, 0.05, 0.0, 0.0, 0.1, -0.05, 0.0]},
+    {"day": 4,  "date": "2026-03-30", "title": "鄭習會宣布（爭議型）",
+     "impact": [-0.05, -0.05, 0.0, 0.0, -0.1, 0.0, -0.1, -0.15]},
+    {"day": 15, "date": "2026-04-10", "title": "鄭習會實際（噓率降溫）",
+     "impact": [-0.03, -0.03, 0.0, 0.0, -0.05, 0.0, -0.05, -0.20]},
+    {"day": 18, "date": "2026-04-13", "title": "李貞秀被開除黨籍",
+     "impact": [-0.1, -0.05, -0.05, 0.0, 0.0, 0.1, -0.1, 0.0]},
 ]
 
-# 驗證維度（PTT 可觀測的）
-VALIDATION_DIMS = {
-    3: {"name": "經濟焦慮度", "keyword": "油價 漲 缺電 經濟"},
-    4: {"name": "對美信任度", "keyword": "美國 川普 盟友 保護"},
-    5: {"name": "能源供應安全感", "keyword": "能源 缺 電力 石油"},
-    7: {"name": "外部威脅感知", "keyword": "戰爭 攻擊 威脅 軍事"},
+# ── 議題關鍵字 → 維度對應 ──────────────────────────────────
+# 每個維度關聯的 PTT 關鍵字（多個關鍵字 = 該維度的 proxy 訊號）
+DIM_KEYWORDS = {
+    0: {"name": "政府信任度",     "keywords": ["柯文哲", "京華城", "判決", "司法", "檢察"]},
+    1: {"name": "制度公信力",     "keywords": ["判決", "制度", "違憲", "憲法"]},
+    5: {"name": "政治改革意願",   "keywords": ["罷免", "民主", "改革", "青鳥"]},
+    6: {"name": "群體凝聚度",     "keywords": ["黃國昌", "民眾黨", "李貞秀", "黨籍", "開除"]},
+    7: {"name": "外部威脅感知",   "keywords": ["鄭習會", "鄭麗文", "習近平", "兩岸", "訪中"]},
 }
 
 
-def run_prediction_model(scenario=None, horizon: int = 22) -> np.ndarray:
-    """執行模型預測，回傳信念軌跡。
+# ── Step 1: 從 DB 讀真實 PTT 推噓 ─────────────────────────
+
+def fetch_real_ptt_stance(dim_idx: int, keywords: list[str]) -> dict[int, dict]:
+    """查 DB，按日聚合關鍵字相關文章的推噓比。
 
     Returns:
-        (horizon+1, n_agents, n_dims) trajectory
+        {day: {"articles": N, "push": X, "boo": Y, "arrow": Z, "push_ratio": R}}
     """
-    if scenario is None:
-        scenario = build_scenario()
+    from globeedge.app import create_app
+    from globeedge.db import db
+    from globeedge.models import PttArticle
 
-    B0 = scenario.belief_matrix()
+    app = create_app()
+    with app.app_context():
+        # 用 OR 查所有關鍵字
+        filters = [PttArticle.title.contains(kw) for kw in keywords]
+        arts = PttArticle.query.filter(db.or_(*filters)).all()
+
+        # 按實際發表日期分組（從 URL timestamp）
+        by_day: dict[int, dict] = defaultdict(lambda: {
+            "articles": 0, "push": 0, "boo": 0, "arrow": 0
+        })
+        for a in arts:
+            m = re.search(r'M\.(\d+)\.A', a.url)
+            if not m:
+                continue
+            dt = datetime.fromtimestamp(int(m.group(1)))
+            if not (START_DATE <= dt < END_DATE):
+                continue
+            day = (dt.date() - START_DATE.date()).days
+            by_day[day]["articles"] += 1
+            by_day[day]["push"] += (a.push_count or 0)
+            by_day[day]["boo"] += (a.boo_count or 0)
+            by_day[day]["arrow"] += (a.arrow_count or 0)
+
+    # 計算 push_ratio
+    for day, stats in by_day.items():
+        total_pb = stats["push"] + stats["boo"]
+        stats["push_ratio"] = stats["push"] / total_pb if total_pb > 0 else 0.5
+        stats["total_int"] = stats["push"] + stats["boo"] + stats["arrow"]
+    return dict(by_day)
+
+
+# ── Step 2: 推噓比 → 信念方向訊號 ─────────────────────────
+
+def ptt_to_belief_signal(push_ratio: float, articles: int) -> float:
+    """把推噓比轉成 [-1, +1] 的信念訊號。
+
+    push_ratio 75%+ → 強烈正方向（議題被支持討論）
+    push_ratio 50% 基準 → 中性
+    push_ratio 25%- → 強烈負方向（被反對）
+
+    低樣本量（< 3 篇）→ 回傳中性，避免雜訊
+    """
+    if articles < 3:
+        return 0.0
+    # 把 [0, 1] 映射到 [-1, +1]，0.5 為中性
+    return (push_ratio - 0.5) * 2
+
+
+def build_actual_series(horizon: int) -> dict[int, list[float]]:
+    """建構每個維度每天的真實信念訊號時序。
+
+    Returns:
+        {dim_idx: [signal_t0, signal_t1, ...]}
+    """
+    result = {}
+    for dim_idx, info in DIM_KEYWORDS.items():
+        logger.info("  Fetching dim %d (%s): %s",
+                    dim_idx, info["name"], info["keywords"])
+        stance_by_day = fetch_real_ptt_stance(dim_idx, info["keywords"])
+
+        series = []
+        for day in range(horizon + 1):
+            stats = stance_by_day.get(day)
+            if stats:
+                signal = ptt_to_belief_signal(stats["push_ratio"], stats["articles"])
+            else:
+                signal = 0.0
+            series.append(signal)
+        result[dim_idx] = series
+        n_days_with_data = sum(1 for s in series if s != 0.0)
+        logger.info("    %d/%d days with data", n_days_with_data, horizon + 1)
+    return result
+
+
+# ── Step 3: GlobeEdge 預測 ────────────────────────────────
+
+def run_globeedge_prediction(horizon: int = HORIZON, b0_override=None) -> np.ndarray:
+    """跑 GlobeEdge 仿真，回傳 (horizon+1, n_agents, n_dims) 軌跡。
+
+    用 geopolitics scenario（覆蓋鄭習會 + 柯文哲的部分維度）
+    套用動機性推理 + Ebbinghaus
+    """
+    from globeedge.scenarios.geopolitics import build as build_scenario
+    scenario = build_scenario()
+    B0 = scenario.belief_matrix() if b0_override is None else b0_override
     W = scenario.default_W()
     agent_types = scenario.agent_types()
     n_agents, n_dims = B0.shape
     alpha = scenario.alpha
 
-    # 套用動機性推理
     W_mod = apply_motivated_reasoning(W, B0)
 
-    # 建立事件 dict
+    # 注入真實事件
     events = {}
-    for evt in IRAN_WAR_TIMELINE:
-        day = evt["day"]
-        if day <= horizon:
-            impact = np.zeros((n_agents, n_dims))
-            for i in range(n_agents):
-                impact[i] = evt["impact"]
-            events[day] = impact
+    for evt in REAL_TIMELINE:
+        if evt["day"] <= horizon:
+            impact = np.tile(np.array(evt["impact"]), (n_agents, 1))
+            events[evt["day"]] = impact
 
-    # 跑 FJ + Ebbinghaus
-    trajectory = []
+    trajectory = [B0.copy()]
     B = B0.copy()
-    for t in range(horizon + 1):
+    for t in range(horizon):
+        B_next = alpha * W_mod @ B + (1 - alpha) * B0
+        if t in events:
+            B_next = B_next + events[t]
+        B_next = np.clip(B_next, -1.0, 1.0)
+        B_next = apply_forgetting(B_next, B0, agent_types)
+        B_next = np.clip(B_next, -1.0, 1.0)
+        B = B_next
         trajectory.append(B.copy())
-        if t < horizon:
-            B_next = alpha * W_mod @ B + (1 - alpha) * B0
-            if t in events:
-                B_next = B_next + events[t]
-            B_next = np.clip(B_next, -1.0, 1.0)
-            B_next = apply_forgetting(B_next, B0, agent_types)
-            B_next = np.clip(B_next, -1.0, 1.0)
-            B = B_next
 
-    return np.array(trajectory)  # (horizon+1, n_agents, n_dims)
+    return np.array(trajectory)
 
 
-def generate_synthetic_ptt(horizon: int = 22) -> dict[int, dict[int, float]]:
-    """生成合成 PTT 輿論資料（模擬真實趨勢）。
+# ── Step 4: 比對與指標計算 ────────────────────────────────
 
-    Returns:
-        {dim_idx: {day: average_stance, ...}}
-    """
-    rng = np.random.default_rng(42)
-    actual = {}
-
-    for dim_idx, info in VALIDATION_DIMS.items():
-        daily = {}
-        for day in range(horizon + 1):
-            if dim_idx == 3:  # 經濟焦慮
-                # 空襲後快速上升，封鎖海峽後更高，IEA 釋放後略降
-                base = 0.1
-                if day >= 0: base += 0.2
-                if day >= 2: base += 0.3
-                if day >= 8: base += 0.2
-                if day >= 10: base -= 0.1
-                value = base + rng.normal(0, 0.05)
-            elif dim_idx == 4:  # 對美信任
-                # 先升（美國出手）後降（油價衝擊台灣）
-                base = 0.1
-                if day >= 0: base += 0.15
-                if day >= 2: base -= 0.05
-                if day >= 8: base -= 0.2
-                value = base + rng.normal(0, 0.08)
-            elif dim_idx == 5:  # 能源安全感
-                # 持續下降
-                base = 0.0
-                if day >= 2: base -= 0.3
-                if day >= 3: base -= 0.2
-                if day >= 10: base += 0.1
-                value = base + rng.normal(0, 0.05)
-            elif dim_idx == 7:  # 外部威脅
-                # 快速上升後緩慢衰退
-                base = 0.2
-                if day >= 0: base += 0.3
-                if day >= 2: base += 0.1
-                if day >= 10: base -= 0.05
-                value = base + rng.normal(0, 0.06)
-            else:
-                value = rng.normal(0, 0.1)
-
-            daily[day] = round(max(-1.0, min(1.0, value)), 3)
-
-        actual[dim_idx] = daily
-
-    return actual
+def signal_direction(x: float, threshold: float = 0.05) -> int:
+    """訊號方向：+1 正向、-1 負向、0 中性。"""
+    if x > threshold:
+        return 1
+    if x < -threshold:
+        return -1
+    return 0
 
 
-def compare_prediction_vs_actual(
-    predicted: np.ndarray,    # (horizon+1, n_agents, n_dims)
-    actual: dict[int, dict[int, float]],
-    agent_names: list[str],
-) -> dict:
-    """比較預測 vs 真實資料。"""
-    horizon = predicted.shape[0] - 1
-    n_agents = predicted.shape[1]
+def compute_direction_accuracy(predicted: list[float], actual: list[float]) -> dict:
+    """方向準確率：計算預測方向與真實方向一致的比例。"""
+    if len(predicted) != len(actual):
+        raise ValueError("length mismatch")
+    matched = 0
+    valid = 0
+    for p, a in zip(predicted, actual):
+        if a == 0:
+            continue  # 真實資料為空（中性）不計
+        valid += 1
+        if signal_direction(p) == signal_direction(a):
+            matched += 1
+    accuracy = matched / valid if valid > 0 else 0.0
+    return {"valid_days": valid, "matched": matched, "accuracy": round(accuracy, 3)}
 
-    results = {}
-    for dim_idx, info in VALIDATION_DIMS.items():
-        dim_name = info["name"]
 
-        # 模型預測：取所有 Agent 的平均
-        pred_series = [float(predicted[t, :, dim_idx].mean()) for t in range(horizon + 1)]
+def pearson_correlation(a: list[float], b: list[float]) -> float:
+    """Pearson 相關係數（容錯）。"""
+    a, b = np.array(a), np.array(b)
+    if np.std(a) < 1e-9 or np.std(b) < 1e-9:
+        return 0.0
+    return float(np.corrcoef(a, b)[0, 1])
 
-        # 真實資料
-        actual_days = actual.get(dim_idx, {})
-        actual_series = [actual_days.get(t, 0.0) for t in range(horizon + 1)]
 
-        # 方向一致性 (Pearson)
-        pred_arr = np.array(pred_series)
-        actual_arr = np.array(actual_series)
+def compare(predicted_trajectory: np.ndarray, actual: dict[int, list[float]]) -> dict:
+    """比對 GlobeEdge 預測 vs PTT 真實訊號。"""
+    horizon = predicted_trajectory.shape[0] - 1
+    dim_reports = {}
 
-        # 計算變化量（Δ）再做相關
-        if len(pred_arr) > 1:
-            pred_diff = np.diff(pred_arr)
-            actual_diff = np.diff(actual_arr)
-            if np.std(pred_diff) > 1e-9 and np.std(actual_diff) > 1e-9:
-                correlation = float(np.corrcoef(pred_diff, actual_diff)[0, 1])
-            else:
-                correlation = 0.0
-        else:
-            correlation = 0.0
+    for dim_idx, info in DIM_KEYWORDS.items():
+        # 預測：取所有 Agent 的平均
+        pred_series = [float(predicted_trajectory[t, :, dim_idx].mean())
+                       for t in range(horizon + 1)]
+        actual_series = actual[dim_idx]
 
-        # 趨勢方向
-        pred_trend = "上升" if pred_series[-1] > pred_series[0] + 0.05 else "下降" if pred_series[-1] < pred_series[0] - 0.05 else "持平"
-        actual_trend = "上升" if actual_series[-1] > actual_series[0] + 0.05 else "下降" if actual_series[-1] < actual_series[0] - 0.05 else "持平"
-        direction_match = pred_trend == actual_trend
+        acc = compute_direction_accuracy(pred_series, actual_series)
+        corr = pearson_correlation(pred_series, actual_series)
 
-        # 事件反應時機：最大偏移出現在哪一天
-        pred_max_day = int(np.argmax(np.abs(pred_arr - pred_arr[0])))
-        actual_max_day = int(np.argmax(np.abs(actual_arr - actual_arr[0])))
-        timing_diff = abs(pred_max_day - actual_max_day)
+        # MSE
+        mse = float(np.mean((np.array(pred_series) - np.array(actual_series)) ** 2))
 
-        results[dim_name] = {
-            "dim_index": dim_idx,
-            "predicted_trend": pred_trend,
-            "actual_trend": actual_trend,
-            "direction_match": direction_match,
-            "correlation": round(correlation, 3),
-            "pred_max_shift_day": pred_max_day,
-            "actual_max_shift_day": actual_max_day,
-            "timing_diff_days": timing_diff,
+        dim_reports[dim_idx] = {
+            "name": info["name"],
+            "direction_accuracy": acc["accuracy"],
+            "valid_days": acc["valid_days"],
+            "pearson_r": round(corr, 3),
+            "mse": round(mse, 4),
             "pred_final": round(pred_series[-1], 3),
             "actual_final": round(actual_series[-1], 3),
         }
 
-    # 整體準確度
-    dim_results = list(results.values())
-    direction_accuracy = sum(1 for r in dim_results if r["direction_match"]) / len(dim_results)
-    avg_correlation = np.mean([abs(r["correlation"]) for r in dim_results])
+    # 整體 AUC（方向準確率平均）
+    accs = [r["direction_accuracy"] for r in dim_reports.values() if r["valid_days"] > 0]
+    overall_auc = float(np.mean(accs)) if accs else 0.0
 
-    best_dim = max(dim_results, key=lambda r: abs(r["correlation"]))
-    worst_dim = min(dim_results, key=lambda r: abs(r["correlation"]))
+    best = max(dim_reports.items(), key=lambda x: x[1]["direction_accuracy"])
+    worst = min(dim_reports.items(), key=lambda x: x[1]["direction_accuracy"])
 
     return {
-        "period": "2026-02-28 to 2026-03-22",
+        "period": f"{START_DATE.strftime('%Y-%m-%d')} to {END_DATE.strftime('%Y-%m-%d')}",
         "horizon": horizon,
-        "dimensions": results,
-        "overall_direction_accuracy": round(direction_accuracy, 2),
-        "average_abs_correlation": round(float(avg_correlation), 3),
-        "best_dimension": best_dim["dim_index"],
-        "worst_dimension": worst_dim["dim_index"],
+        "dimensions": dim_reports,
+        "overall_auc": round(overall_auc, 3),
+        "best_dimension": best[1]["name"],
+        "worst_dimension": worst[1]["name"],
     }
 
 
-def main():
-    import argparse
+# ── Q3: b(0) 敏感度分析 ──────────────────────────────────
 
-    parser = argparse.ArgumentParser(description="GlobeEdge 預測性驗證")
-    parser.add_argument("--dry-run", action="store_true", help="用合成 PTT 資料")
+def sensitivity_b0(actual: dict, n_trials: int = 5, seed: int = 42) -> dict:
+    """隨機化 b(0) 跑多次，看 AUC 變化幅度。
+
+    baseline AUC vs 隨機 b(0) 的 AUC 分佈
+    差距大 → b(0) 重要，差距小 → W 矩陣主導
+    """
+    from globeedge.scenarios.geopolitics import build as build_scenario
+    scenario = build_scenario()
+    original_B0 = scenario.belief_matrix()
+
+    rng = np.random.default_rng(seed)
+    aucs = []
+    for i in range(n_trials):
+        # 隨機 b(0)，保持 [-1, 1] 範圍
+        random_B0 = rng.uniform(-0.5, 0.5, original_B0.shape)
+        pred = run_globeedge_prediction(horizon=HORIZON, b0_override=random_B0)
+        report = compare(pred, actual)
+        aucs.append(report["overall_auc"])
+
+    return {
+        "n_trials": n_trials,
+        "random_b0_aucs": [round(a, 3) for a in aucs],
+        "mean_random_auc": round(float(np.mean(aucs)), 3),
+        "std_random_auc": round(float(np.std(aucs)), 3),
+        "max_random_auc": round(float(np.max(aucs)), 3),
+        "min_random_auc": round(float(np.min(aucs)), 3),
+    }
+
+
+# ── Main ──────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description="GlobeEdge 真實 PTT 預測驗證")
     parser.add_argument("--output", type=str, default="results/predictive_validation.json")
+    parser.add_argument("--skip-q3", action="store_true", help="跳過 b(0) 敏感度")
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
-    scenario = build_scenario()
-    agent_names = [a.name for a in scenario.agents]
-    horizon = 22  # 2026-02-28 到 2026-03-22
+    logger.info("=" * 60)
+    logger.info("  GlobeEdge 預測性驗證（真實 PTT 資料）")
+    logger.info(f"  期間：{START_DATE.date()} 到 {END_DATE.date()}")
+    logger.info(f"  Horizon: {HORIZON} 天")
+    logger.info(f"  真實事件：{len(REAL_TIMELINE)}")
+    logger.info("=" * 60)
 
-    # Step 1: 跑模型預測
-    logger.info("=" * 60)
-    logger.info("Step 1: 模型預測 (alpha=0.3, Ebbinghaus, Backfire)")
-    logger.info("=" * 60)
-    predicted = run_prediction_model(scenario, horizon=horizon)
+    # Step 1: 從 DB 讀真實訊號
+    logger.info("\nStep 1: 從 DB 讀取真實 PTT 推噓訊號")
+    actual = build_actual_series(horizon=HORIZON)
+
+    # Step 2: GlobeEdge 基線預測
+    logger.info("\nStep 2: GlobeEdge 基線預測（geopolitics scenario）")
+    predicted = run_globeedge_prediction(horizon=HORIZON)
     logger.info(f"  Trajectory shape: {predicted.shape}")
 
-    # Step 2: 收集真實資料
-    logger.info(f"\n{'='*60}")
-    if args.dry_run:
-        logger.info("Step 2: 合成 PTT 資料 (dry run)")
-    else:
-        logger.info("Step 2: 收集真實 PTT 資料")
-    logger.info("=" * 60)
+    # Step 3: 比對
+    logger.info("\nStep 3: 預測 vs 真實比對")
+    report = compare(predicted, actual)
 
-    actual = generate_synthetic_ptt(horizon=horizon)
-    logger.info(f"  {len(actual)} dimensions with daily stance data")
-
-    # Step 3: 比較
-    logger.info(f"\n{'='*60}")
-    logger.info("Step 3: 預測 vs 真實 比較")
-    logger.info("=" * 60)
-
-    report = compare_prediction_vs_actual(predicted, actual, agent_names)
-
-    for dim_name, r in report["dimensions"].items():
-        icon = "✅" if r["direction_match"] else "❌"
+    for dim_idx, r in sorted(report["dimensions"].items()):
+        icon = "✅" if r["direction_accuracy"] >= 0.5 else "❌"
         logger.info(
-            f"\n  {icon} {dim_name}"
-            f"\n    趨勢: 預測={r['predicted_trend']}  實際={r['actual_trend']}"
-            f"\n    相關: r={r['correlation']:+.3f}"
-            f"\n    最大偏移: 預測=t{r['pred_max_shift_day']}  實際=t{r['actual_max_shift_day']}  差={r['timing_diff_days']}天"
+            f"  {icon} dim{dim_idx} {r['name']:10s}  "
+            f"acc={r['direction_accuracy']:.2f}  "
+            f"valid_days={r['valid_days']:2d}  "
+            f"r={r['pearson_r']:+.3f}  "
+            f"mse={r['mse']:.4f}"
         )
 
-    logger.info(f"\n{'='*60}")
-    logger.info("摘要")
-    logger.info(f"{'='*60}")
-    logger.info(f"  方向準確率: {report['overall_direction_accuracy']*100:.0f}%")
-    logger.info(f"  平均|相關係數|: {report['average_abs_correlation']:.3f}")
+    logger.info(f"\n  ★ 整體 AUC: {report['overall_auc']:.3f}")
+    logger.info(f"  最準維度: {report['best_dimension']}")
+    logger.info(f"  最差維度: {report['worst_dimension']}")
 
-    best_name = [k for k, v in report["dimensions"].items() if v["dim_index"] == report["best_dimension"]][0]
-    worst_name = [k for k, v in report["dimensions"].items() if v["dim_index"] == report["worst_dimension"]][0]
-    logger.info(f"  最準維度: {best_name}")
-    logger.info(f"  最不準維度: {worst_name}")
+    # Q3: b(0) 敏感度
+    if not args.skip_q3:
+        logger.info("\nStep 4: Q3 敏感度分析（b(0) 隨機化 5 次）")
+        q3 = sensitivity_b0(actual, n_trials=5)
+        logger.info(f"  Baseline AUC:   {report['overall_auc']:.3f}")
+        logger.info(f"  隨機 b(0) 平均:  {q3['mean_random_auc']:.3f} ± {q3['std_random_auc']:.3f}")
+        logger.info(f"  隨機 b(0) 範圍:  [{q3['min_random_auc']:.3f}, {q3['max_random_auc']:.3f}]")
+        delta = report["overall_auc"] - q3["mean_random_auc"]
+        logger.info(f"  Δ(baseline - random): {delta:+.3f}")
+        if abs(delta) > 0.1:
+            logger.info(f"  → b(0) 重要：初始信念設定大幅影響結果")
+        else:
+            logger.info(f"  → W 矩陣主導：b(0) 變動對結果影響小")
+        report["sensitivity_b0"] = q3
+        report["delta_baseline_vs_random"] = round(delta, 3)
 
     # 輸出
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
-
-    logger.info(f"\n報告已輸出到 {args.output}")
+    logger.info(f"\n報告已輸出：{args.output}")
 
 
 if __name__ == "__main__":

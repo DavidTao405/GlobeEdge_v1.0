@@ -19,20 +19,38 @@ signal_scheduler = BackgroundScheduler(timezone="Asia/Taipei")
 
 
 def _run_usgs():
-    """USGS 地震偵測。"""
-    from globeedge.signals.usgs_signal import run_usgs_pipeline
+    """USGS 地震偵測，含 DB 持久化。"""
+    from globeedge.signals.usgs_signal import run_usgs_pipeline, persist_events
 
     logger.info("[signal] starting USGS pipeline")
-    events = run_usgs_pipeline(hours=2)  # 只查最近 2 小時，避免重複
+    events = run_usgs_pipeline(hours=2)
+    if events:
+        try:
+            from globeedge.app import create_app
+            app = create_app()
+            with app.app_context():
+                n = persist_events(events)
+                logger.info("[signal] USGS persisted %d events to DB", n)
+        except Exception:
+            logger.exception("[signal] USGS persist failed")
     logger.info("[signal] USGS done, %d events", len(events))
 
 
 def _run_gdelt():
-    """GDELT 台灣負面新聞。"""
-    from globeedge.signals.gdelt_signal import run_gdelt_pipeline
+    """GDELT 台灣負面新聞，含 DB 持久化。"""
+    from globeedge.signals.gdelt_signal import run_gdelt_pipeline, persist_events
 
     logger.info("[signal] starting GDELT pipeline")
     events = run_gdelt_pipeline(timespan="6h")
+    if events:
+        try:
+            from globeedge.app import create_app
+            app = create_app()
+            with app.app_context():
+                n = persist_events(events)
+                logger.info("[signal] GDELT persisted %d events to DB", n)
+        except Exception:
+            logger.exception("[signal] GDELT persist failed")
     logger.info("[signal] GDELT done, %d events", len(events))
 
 

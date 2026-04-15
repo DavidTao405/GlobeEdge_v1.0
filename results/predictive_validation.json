@@ -1,58 +1,69 @@
 {
-  "period": "2026-02-28 to 2026-03-22",
-  "horizon": 22,
+  "period": "2026-03-26 to 2026-04-16",
+  "horizon": 20,
   "dimensions": {
-    "經濟焦慮度": {
-      "dim_index": 3,
-      "predicted_trend": "下降",
-      "actual_trend": "上升",
-      "direction_match": false,
-      "correlation": -0.363,
-      "pred_max_shift_day": 9,
-      "actual_max_shift_day": 8,
-      "timing_diff_days": 1,
-      "pred_final": 0.452,
-      "actual_final": 0.761
+    "0": {
+      "name": "政府信任度",
+      "direction_accuracy": 0.125,
+      "valid_days": 16,
+      "pearson_r": 0.298,
+      "mse": 0.2524,
+      "pred_final": 0.015,
+      "actual_final": 0.0
     },
-    "對美信任度": {
-      "dim_index": 4,
-      "predicted_trend": "持平",
-      "actual_trend": "下降",
-      "direction_match": false,
-      "correlation": -0.001,
-      "pred_max_shift_day": 3,
-      "actual_max_shift_day": 14,
-      "timing_diff_days": 11,
-      "pred_final": 0.088,
-      "actual_final": 0.017
+    "1": {
+      "name": "制度公信力",
+      "direction_accuracy": 0.0,
+      "valid_days": 4,
+      "pearson_r": 0.223,
+      "mse": 0.0703,
+      "pred_final": 0.004,
+      "actual_final": 0.0
     },
-    "能源供應安全感": {
-      "dim_index": 5,
-      "predicted_trend": "持平",
-      "actual_trend": "下降",
-      "direction_match": false,
-      "correlation": 0.438,
-      "pred_max_shift_day": 4,
-      "actual_max_shift_day": 6,
-      "timing_diff_days": 2,
-      "pred_final": -0.238,
-      "actual_final": -0.357
+    "5": {
+      "name": "政治改革意願",
+      "direction_accuracy": 1.0,
+      "valid_days": 8,
+      "pearson_r": 0.017,
+      "mse": 0.1324,
+      "pred_final": 0.134,
+      "actual_final": 0.0
     },
-    "外部威脅感知": {
-      "dim_index": 7,
-      "predicted_trend": "下降",
-      "actual_trend": "上升",
-      "direction_match": false,
-      "correlation": -0.189,
-      "pred_max_shift_day": 3,
-      "actual_max_shift_day": 6,
-      "timing_diff_days": 3,
-      "pred_final": 0.323,
-      "actual_final": 0.544
+    "6": {
+      "name": "群體凝聚度",
+      "direction_accuracy": 0.7,
+      "valid_days": 10,
+      "pearson_r": -0.007,
+      "mse": 0.2208,
+      "pred_final": 0.059,
+      "actual_final": 0.618
+    },
+    "7": {
+      "name": "外部威脅感知",
+      "direction_accuracy": 0.882,
+      "valid_days": 17,
+      "pearson_r": -0.166,
+      "mse": 0.0737,
+      "pred_final": 0.285,
+      "actual_final": -0.12
     }
   },
-  "overall_direction_accuracy": 0.0,
-  "average_abs_correlation": 0.248,
-  "best_dimension": 5,
-  "worst_dimension": 4
+  "overall_auc": 0.541,
+  "best_dimension": "政治改革意願",
+  "worst_dimension": "制度公信力",
+  "sensitivity_b0": {
+    "n_trials": 5,
+    "random_b0_aucs": [
+      0.631,
+      0.263,
+      0.445,
+      0.025,
+      0.425
+    ],
+    "mean_random_auc": 0.358,
+    "std_random_auc": 0.203,
+    "max_random_auc": 0.631,
+    "min_random_auc": 0.025
+  },
+  "delta_baseline_vs_random": 0.183
 }

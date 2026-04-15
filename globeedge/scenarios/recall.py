@@ -110,6 +110,25 @@ EVENTS = [
             "迷因傳播快(3x) 但衰退也快(S≈1)，不觸發 Backfire"
         ),
     ),
+    EventDef(
+        title="柯文哲京華城案一審判刑17年",
+        domain="judicial",
+        impact_vector=[0.15, 0.0, 0.05, 0.0, 0.0, 0.1, -0.05, 0.0],
+        description=(
+            "★ 首個有真實 PTT 資料支撐的 impact_vector。"
+            "司法功能彰顯 → 政府信任度↑ 政治改革意願↑ "
+            "分裂型事件 → 群體凝聚度輕微↓"
+        ),
+        metadata={
+            "ptt_articles": 55,
+            "push_ratio": 0.893,
+            "neutral_ratio": 0.591,
+            "event_type": "分裂型事件（非凝聚型）",
+            "data_date": "2026-03-26 to 2026-03-27",
+            "data_source": "PTT HatePolitics backfill",
+            "note": "推噓比 89:11 → dim0 正向；箭頭 59% → 大量中性討論",
+        },
+    ),
 ]
 
 

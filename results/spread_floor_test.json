@@ -1,0 +1,123 @@
+{
+  "scenario": "energy_policy",
+  "n_agents": 11,
+  "n_dims": 8,
+  "horizon": 30,
+  "initial_spread": 0.2028,
+  "collapse_alpha": 0.5,
+  "alpha_03_safe": true,
+  "alpha_03_spread": 0.1385,
+  "min_spread_threshold": 0.15,
+  "no_protection": {
+    "0.1": {
+      "final_spread": 0.1809,
+      "min_spread": 0.1806,
+      "initial_spread": 0.2028,
+      "collapsed": false
+    },
+    "0.2": {
+      "final_spread": 0.1594,
+      "min_spread": 0.1586,
+      "initial_spread": 0.2028,
+      "collapsed": false
+    },
+    "0.3": {
+      "final_spread": 0.1385,
+      "min_spread": 0.1366,
+      "initial_spread": 0.2028,
+      "collapsed": false
+    },
+    "0.4": {
+      "final_spread": 0.118,
+      "min_spread": 0.1148,
+      "initial_spread": 0.2028,
+      "collapsed": false
+    },
+    "0.5": {
+      "final_spread": 0.098,
+      "min_spread": 0.0932,
+      "initial_spread": 0.2028,
+      "collapsed": true
+    },
+    "0.6": {
+      "final_spread": 0.0785,
+      "min_spread": 0.0722,
+      "initial_spread": 0.2028,
+      "collapsed": true
+    },
+    "0.7": {
+      "final_spread": 0.0593,
+      "min_spread": 0.0521,
+      "initial_spread": 0.2028,
+      "collapsed": true
+    },
+    "0.8": {
+      "final_spread": 0.0403,
+      "min_spread": 0.0341,
+      "initial_spread": 0.2028,
+      "collapsed": true
+    },
+    "0.9": {
+      "final_spread": 0.021,
+      "min_spread": 0.021,
+      "initial_spread": 0.2028,
+      "collapsed": true
+    }
+  },
+  "with_protection": {
+    "0.1": {
+      "final_spread": 0.1809,
+      "collapsed": false,
+      "alpha_reductions": 0,
+      "min_alpha_used": 0.1
+    },
+    "0.2": {
+      "final_spread": 0.1594,
+      "collapsed": false,
+      "alpha_reductions": 0,
+      "min_alpha_used": 0.2
+    },
+    "0.3": {
+      "final_spread": 0.1433,
+      "collapsed": false,
+      "alpha_reductions": 30,
+      "min_alpha_used": 0.2732
+    },
+    "0.4": {
+      "final_spread": 0.1358,
+      "collapsed": false,
+      "alpha_reductions": 30,
+      "min_alpha_used": 0.306
+    },
+    "0.5": {
+      "final_spread": 0.1341,
+      "collapsed": false,
+      "alpha_reductions": 30,
+      "min_alpha_used": 0.3107
+    },
+    "0.6": {
+      "final_spread": 0.138,
+      "collapsed": false,
+      "alpha_reductions": 30,
+      "min_alpha_used": 0.2886
+    },
+    "0.7": {
+      "final_spread": 0.1473,
+      "collapsed": false,
+      "alpha_reductions": 30,
+      "min_alpha_used": 0.2429
+    },
+    "0.8": {
+      "final_spread": 0.161,
+      "collapsed": false,
+      "alpha_reductions": 30,
+      "min_alpha_used": 0.1816
+    },
+    "0.9": {
+      "final_spread": 0.1741,
+      "collapsed": false,
+      "alpha_reductions": 30,
+      "min_alpha_used": 0.1312
+    }
+  }
+}

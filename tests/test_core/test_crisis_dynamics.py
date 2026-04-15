@@ -7,9 +7,11 @@ import pytest
 
 from globeedge.core.belief_state import BeliefState
 from globeedge.core.crisis_dynamics import (
+    MIN_SPREAD,
     CrisisAwareFJEngine,
     CrisisConfig,
     CrisisStepResult,
+    _compute_spread,
     compute_dynamic_alpha,
     drift_b0,
     update_crisis_intensity,
@@ -118,7 +120,8 @@ class TestCrisisAwareFJEngine:
         result = engine.step(simple_state)
         assert isinstance(result, CrisisStepResult)
         assert result.crisis_intensity == 0.0
-        assert result.effective_alpha == pytest.approx(0.3)
+        # effective_alpha may be < 0.3 if spread floor activates on small fixture
+        assert result.effective_alpha <= 0.3 + 0.01
 
     def test_crisis_builds_with_events(self, simple_state, simple_b0):
         engine = CrisisAwareFJEngine(alpha=0.3, b0=simple_b0)
@@ -171,6 +174,53 @@ class TestCrisisAwareFJEngine:
         results = engine.run(simple_state, horizon=10, events=events)
         # After events, crisis_intensity should be elevated
         assert results[5].crisis_intensity > 0
+
+    def test_spread_floor_in_crisis(self):
+        """高 alpha（crisis）下 spread floor 防止崩潰。
+
+        用持續事件（每 3 步注入）維持高危機強度，模擬真實持續危機。
+        驗證 spread floor 讓 effective_alpha 在崩潰區被自動降低。
+        """
+        from globeedge.scenarios.energy import build as build_energy
+        scenario = build_energy()
+        B0 = scenario.belief_matrix()
+        W = scenario.default_W()
+        n_agents, n_dims = B0.shape
+
+        config = CrisisConfig(alpha_base=0.3, alpha_crisis=0.6)
+        engine = CrisisAwareFJEngine(alpha=0.3, b0=B0, config=config)
+
+        # 每 3 步注入事件，維持高危機強度
+        event = np.random.default_rng(42).uniform(-0.1, 0.3, (n_agents, n_dims))
+        events = {t: event for t in range(0, 30, 3)}
+
+        initial = BeliefState(t=0, B=B0.copy(), W=W, timestamp=datetime.now(timezone.utc))
+        results = engine.run(initial, horizon=30, events=events)
+
+        # 核心驗收：spread floor 應該讓 effective_alpha < alpha_crisis
+        # 當 spread 接近 MIN_SPREAD 時
+        floor_activated = any(
+            r.effective_alpha < config.alpha_crisis - 0.01
+            for r in results[5:]  # 跳過前幾步（危機還沒 build up）
+            if r.crisis_intensity > 0.5
+        )
+        assert floor_activated, (
+            "Spread floor should reduce effective_alpha when spread is low"
+        )
+
+    def test_spread_floor_no_intervention_at_low_alpha(self):
+        """alpha=0.3 + 寬初始信念 → spread floor 不介入。"""
+        from globeedge.scenarios.energy import build as build_energy
+        scenario = build_energy()
+        B0 = scenario.belief_matrix()
+        W = scenario.default_W()
+
+        engine = CrisisAwareFJEngine(alpha=0.3, b0=B0)
+        initial = BeliefState(t=0, B=B0.copy(), W=W, timestamp=datetime.now(timezone.utc))
+        results = engine.run(initial, horizon=30)
+        # alpha=0.3 無危機 → effective_alpha 應該是 0.3
+        for r in results:
+            assert r.effective_alpha == pytest.approx(0.3, abs=0.05)
 
     def test_iran_war_direction_accuracy_improves(self):
         """核心驗收：美伊戰爭方向準確率 > 0%。"""

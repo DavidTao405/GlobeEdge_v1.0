@@ -50,6 +50,7 @@ class EventDef:
     impact_vector: list[float]  # len=8
     domain: str = "domestic"
     description: str = ""
+    metadata: dict = field(default_factory=dict)  # PTT 驗證資料等額外資訊
 
 
 @dataclass

@@ -1,8 +1,8 @@
 # GlobeEdge — Project State
 
-> 社會信念動態世界模型
+> 社會信念動態世界模型（Friedkin-Johnsen + 心理學擴展）
 > Repo: https://github.com/DavidTao405/GlobeEdge_v1.0
-> Last updated: 2026-03-22
+> Last updated: 2026-04-09
 
 ---
 
@@ -10,13 +10,13 @@
 
 | 項目 | 數值 |
 |---|---|
-| 原始碼檔案 | 86 |
-| 總程式碼行數 | 11,128 |
-| Git commits | 13 |
+| 原始碼檔案 | 96 |
+| 總程式碼行數 | 13,841 |
+| Git commits | 20 |
 | Python 套件 | `globeedge/` |
-| 測試 | 47/47 passing (0.78s) |
-| 心理機制驗證 | 8/8 passing |
-| 前端 TypeScript 錯誤 | 0 |
+| 測試 | 70/70 passing (3.81s) |
+| 前端 | Vue 3 + TypeScript + Observable Plot |
+| DB 累積 | PTT 753 篇 + ExternalEvents 413 筆 |
 
 ---
 
@@ -26,47 +26,97 @@
 |---|---|
 | Python | 3.13.3 |
 | venv | `.venv\` |
-| OS | Windows, PowerShell |
+| OS | Windows 11, PowerShell |
 | GPU | RTX 4070 SUPER |
-| DB | PostgreSQL 16 (Docker) |
+| DB | PostgreSQL 16 (Docker, volume=pgdata) |
 | Cache | Redis 7 (Docker) |
-| LLM | Ollama qwen3.5:9b (本地) |
-| Frontend | Vue 3 + TypeScript + Pinia |
-| Charts | Observable Plot + D3 |
+| LLM | Ollama qwen3.5:9b (本機) |
+| Frontend | Vue 3 + TypeScript + Pinia + Observable Plot + D3 |
 
 ---
 
 ## Phase 完成狀態
 
-| Phase | 名稱 | 狀態 | 關鍵產出 |
-|---|---|---|---|
-| Phase 1 | 數學核心 | ✅ 完成 | belief_state, fj_engine, monte_carlo, ews_monitor, distribution |
-| Phase 2 | 資料模型 + API | ✅ 完成 | 7 ORM 實體, Flask CRUD API (projects, simulations, agents) |
-| Phase 3 | 爬蟲層 | ✅ 完成 | PTT, Bluesky, RSS, 金融爬蟲 + APScheduler |
-| Phase 4 | 地緣政治訊號 | ✅ 完成 | USGS, GDELT, ImpactMapper, signal_scheduler |
-| Phase 5 | 仿真佇列 + GPU | ✅ 完成 | Celery task, torch.bmm GPU batching, Redis 進度 |
-| Phase 6 | 前端儀表板 | ✅ 完成 | 結果展示 + 設計流程 + AI b(0) 估計 + What If |
-| Phase 7 | 整合測試與校準 | ✅ 完成 | Granger Causality, EWS backtest, alpha=0.3 |
+| Phase | 名稱 | 狀態 |
+|---|---|---|
+| 1 | 數學核心 | ✅ belief_state, fj_engine, monte_carlo, ews_monitor, distribution |
+| 2 | 資料模型 + API | ✅ 7 ORM + Flask CRUD (projects, simulations, agents) |
+| 3 | 爬蟲層 | ✅ PTT (curl_cffi), Bluesky, RSS, 金融 + APScheduler 7 jobs |
+| 4 | 地緣政治訊號 | ✅ USGS, GDELT, ImpactMapper, signal_scheduler |
+| 5 | 仿真佇列 + GPU | ✅ Celery task, torch.bmm GPU batching, Redis 進度 |
+| 6 | 前端儀表板 | ✅ 8 頁面 + AI b(0) 估計 + What If + 心理機制 UI |
+| 7 | 整合測試與校準 | ✅ Granger Causality, EWS backtest, alpha=0.3 |
 
 ---
 
-## 心理機制擴展
+## 核心擴展
 
-| Layer | 機制 | 狀態 | 關鍵驗證 |
+### 心理機制（4 層）
+
+| Layer | 機制 | 驗證結果 |
+|---|---|---|
+| 1 | Ebbinghaus 遺忘曲線 | PTT S=2 恢復快 39% vs FJ |
+| 2 | ELM 雙路徑說服 | High inv decay=0.15 < Low inv decay=0.40 |
+| 3 | 動機性推理 (Backfire) | 反核↔擁核影響力降 98.1% |
+| 4 | System 1/2 雙歷程 | S1(emo=0.8) 衰退快於 S2(emo=0.2) |
+
+### CrisisAwareFJEngine
+
+| 機制 | 說明 |
+|---|---|
+| Dynamic alpha | base=0.3 → crisis=0.6（危機中錨定減弱） |
+| Dynamic b(0) | drift_rate=0.03（持續危機重寫固有信念） |
+| Spread floor | MIN_SPREAD=0.12（防高 alpha 信念崩潰） |
+| 驗證 | 美伊戰爭方向準確率 0% → 50% |
+
+### 敏感度分析
+
+- 26 參數組合，Spread 變異僅 2.4% → **ROBUST**
+- 結論反轉點：S_forum=1（PTT 恢復只需 2 步）、k=1.0（Backfire 效應不足）
+
+---
+
+## 六議題仿真結果
+
+| # | 議題 | 類型 | λ_max | EWS | 極化 spread |
+|---|---|---|---|---|---|
+| 5 | 美伊戰爭 | ★ 即時 | **0.791** | high | 0.566 |
+| 6 | 大罷免潮 | ★ 即時 | 0.752 | **critical** | **0.881** |
+| 1 | 能源政策 | backtest | 0.760 | high | **1.015** |
+| 2 | AI 監管 | backtest | 0.726 | high | 0.812 |
+| 3 | 地緣政治 | backtest | 0.745 | medium | 0.689 |
+| 4 | 貿易戰 | backtest | 0.634 | medium | 0.483 |
+
+---
+
+## PTT 真實資料校準
+
+兩個事件用真實 PTT 推噓結構校準 impact_vector：
+
+| 事件 | 篇數 | 推噓比 | → 比例 | 類型 |
+|---|---|---|---|---|
+| 柯文哲判決 17年 | 55 | 89:11 | 59% | 分裂型（共識但沉默對立） |
+| 鄭習會宣布 | 44 | 66:34 | 55% | 爭議型（藍綠積極對立） |
+
+---
+
+## DB 資料累積
+
+| 資料源 | 筆數 | 期間 | 看板 |
 |---|---|---|---|
-| Layer 1 | Ebbinghaus 遺忘曲線 | ✅ | PTT 停電後恢復快 39% vs FJ |
-| Layer 2 | ELM 雙路徑說服 | ✅ | High inv decay=0.15 < Low inv decay=0.40 |
-| Layer 3 | 動機性推理 (Backfire) | ✅ | 反核↔擁核影響力降 98.1% |
-| Layer 4 | System 1/2 雙歷程 | ✅ | S1(emo=0.8) 衰退快於 S2(emo=0.2) |
+| PTT 文章 | 753 | 03-22 ~ 04-07 | 八卦 344 / 政黑 409 |
+| External Events | 413 | GDELT + USGS | |
+| 推/噓/→ | 10,352 / 1,924 / 11,189 | | |
 
-```python
-PsychologyConfig(
-    use_forgetting=True,           # Ebbinghaus
-    use_elm=True,                  # ELM 雙路徑
-    use_motivated_reasoning=True,  # Backfire Effect
-    use_dual_process=True,         # System 1/2
-)
-```
+關鍵字覆蓋：
+| 關鍵字 | 篇數 |
+|---|---|
+| 柯文哲 | 95 |
+| 鄭麗文 | 86 |
+| 川普 | 67 |
+| 鄭習會 | 66 |
+| 罷免 | 53 |
+| 關稅 | 39 |
 
 ---
 
@@ -81,128 +131,79 @@ globeedge/
 │   ├── ews_monitor.py       #   MoE 多專家 EWS
 │   ├── distribution.py      #   SimulationDistribution
 │   ├── psychology.py        #   4 層心理機制
-│   └── intervention.py      #   What If 介入引擎
+│   ├── intervention.py      #   What If 介入引擎
+│   └── crisis_dynamics.py   #   CrisisAwareFJEngine + spread floor
 │
-├── models/                  # SQLAlchemy ORM (7 實體)
-│   ├── project.py
-│   ├── agent.py             #   含 issue_involvement (ELM)
-│   ├── influence_edge.py
-│   ├── issue_dimension.py
-│   ├── external_event.py
-│   ├── simulation_result.py
-│   └── ews_alert.py
+├── models/                  # SQLAlchemy ORM (8 表)
+│   ├── project.py / agent.py / influence_edge.py
+│   ├── issue_dimension.py / external_event.py
+│   ├── simulation_result.py / ews_alert.py
+│   └── ptt_article.py       #   PTT 文章持久化
 │
 ├── api/                     # Flask Blueprint
-│   ├── projects.py
-│   ├── simulations.py       #   含 POST /{id}/whatif
-│   └── agents.py            #   含 POST /estimate-belief
+│   ├── projects.py / simulations.py (含 whatif)
+│   └── agents.py (含 estimate-belief)
 │
 ├── services/                # 業務服務
 │   ├── belief_estimator.py  #   AI b(0) 估計 (Ollama)
-│   └── message_analyzer.py  #   訊息情緒性分析 (System 1/2)
+│   └── message_analyzer.py  #   訊息情緒性分析
 │
 ├── crawler/                 # 輿論爬蟲
-│   ├── ptt_crawler.py
-│   ├── bluesky_crawler.py
-│   ├── news_crawler.py
-│   ├── financial_crawler.py
-│   ├── emotionality_tagger.py  # PTT 情緒標記 → Redis
-│   └── scheduler.py
+│   ├── ptt_crawler.py       #   curl_cffi + 推噓解析 + DB 寫入
+│   ├── bluesky_crawler.py / news_crawler.py / financial_crawler.py
+│   ├── emotionality_tagger.py
+│   └── scheduler.py         #   APScheduler 7 jobs
 │
 ├── signals/                 # 地緣政治訊號
-│   ├── usgs_signal.py
-│   ├── gdelt_signal.py
-│   ├── impact_mapper.py
+│   ├── usgs_signal.py / gdelt_signal.py / impact_mapper.py
 │   └── signal_scheduler.py
 │
-├── scenarios/               # 6 個議題情境
-│   ├── base.py
-│   ├── energy.py            #   ①  台灣能源政策
-│   ├── ai_regulation.py     #   ②  AI 監管
-│   ├── geopolitics.py       #   ③  地緣政治
-│   ├── trade_war.py         #   ④  貿易戰
-│   ├── iran_war.py          #   ⑤★ 美伊戰爭
-│   └── recall.py            #   ⑥★ 大罷免潮
+├── scenarios/               # 6 議題情境
+│   ├── base.py / energy.py / ai_regulation.py
+│   ├── geopolitics.py       #   含鄭習會事件（PTT 校準）
+│   ├── trade_war.py / iran_war.py
+│   └── recall.py            #   含柯文哲判決 + WBC 事件
 │
-├── tasks/                   # Celery
-│   ├── celery_app.py
-│   └── simulation_task.py
-│
-├── app.py
-└── db.py
+├── tasks/                   #   Celery
+└── app.py / db.py
 
 frontend/src/
-├── views/                   # 8 個頁面
-│   ├── ProjectListPage.vue  #   含心理機制 checkboxes
-│   ├── DimensionPage.vue
-│   ├── AgentDesignPage.vue  #   含 AI 估計 + 雷達圖
-│   ├── EdgeDesignPage.vue   #   含 W 熱圖
-│   ├── EventDesignPage.vue  #   含 Run Simulation
-│   ├── WhatIfPage.vue       #   反事實分析
-│   └── ResultDashboardPage.vue
-├── components/              #   AgentRadarChart, RiskGauge, EWSChart...
-├── stores/                  #   projectStore, simulationStore
+├── views/  (8 頁面)
+├── components/  (RadarChart, RiskGauge, EWSChart...)
+├── stores/  (projectStore, simulationStore)
 └── lib/api.ts
 
 scripts/
-├── start_api.py             # Flask API 啟動
-├── start_crawlers.py        # 爬蟲+訊號排程啟動
-├── init_db.py
-├── calibrate.py             # Granger Causality
-├── backtest.py              # EWS backtest
-├── run_scenario.py          # 情境仿真
-├── test_psychology.py       # 心理機制驗證 (Layer 1-3)
-└── test_dual_process.py     # System 1/2 驗證 (Layer 4)
+├── start_api.py / start_crawlers.py / init_db.py
+├── backfill_ptt.py          #   關鍵字補抓
+├── calibrate.py / backtest.py / run_scenario.py
+├── sensitivity_analysis.py / calibrate_psychology.py
+├── predictive_validation.py / diagnose_failure.py
+├── run_cross_topic.py
+├── test_psychology.py / test_dual_process.py
+├── test_accumulator.py / test_crisis_dynamics.py
+└── test_spread_floor.py
 ```
 
 ---
 
-## 校準結果 (Phase 7)
+## 校準結果
 
-| 歷史事件 | 顯著邊 | alpha | MSE |
+### Phase 7 Granger Causality
+
+| 歷史事件 | 顯著邊 | 最佳 alpha | MSE |
 |---|---|---|---|
 | 花蓮 M7.2 地震 | 7 | 0.3 | 0.0077 |
 | 台灣總統大選 | 5 | 0.3 | 0.0110 |
 | 裴洛西訪台 | 13 | 0.3 | 0.0074 |
 
----
+### 研究故事
 
-## 六議題仿真結果
-
-| # | 議題 | λ_max | EWS | 極化 spread |
-|---|---|---|---|---|
-| 5 | 美伊戰爭 ★ | **0.791** | high | 0.566 |
-| 6 | 大罷免潮 ★ | 0.752 | **critical** | **0.881** |
-| 1 | 能源政策 | 0.760 | high | **1.015** |
-| 2 | AI 監管 | 0.726 | high | 0.812 |
-| 3 | 地緣政治 | 0.745 | medium | 0.689 |
-| 4 | 貿易戰 | 0.634 | medium | 0.483 |
-
----
-
-## 驗證層次
-
-| 層次 | 名稱 | 狀態 | 結果 |
-|---|---|---|---|
-| 1 | 理論一致性 | ✅ | 數學自洽，47/47 測試 |
-| 2 | 歷史 Backtest | ✅ | 3 事件 AUC significant |
-| 3a | 敏感度分析 | ✅ | Spread 變異 2.4% → ROBUST |
-| 3b | 心理參數校準 | ✅ dry-run | forum S=2.0 ✅, demo S=4.5 ✅, kol S=19.4 ⚠️ |
-| 4 | 預測性驗證 | ✅ dry-run | 方向準確率待真實 PTT 資料 |
-
-### 敏感度分析關鍵發現
-- **26 個參數組合**（S_forum × threshold × k）
-- Spread 範圍 [1.312, 1.344] → **變異僅 2.4%**
-- 結論反轉點：S_forum=1 時 PTT 恢復只需 2 步（vs S=2 時 30 步）
-- Backfire k=1.0 時殘餘影響力仍 >0.01 → 效應不足
-
-### 預測性驗證（dry-run 誠實結果）
-- 方向準確率：0%（合成資料 vs 模型預測）
-- **原因**：FJ+Ebbinghaus (alpha=0.3) 預測快速回到 b(0)，
-  但真實輿論可能持續偏移 → alpha=0.3 可能過低
-- 最準維度：能源供應安全感 (r=+0.438)
-- 最不準維度：對美信任度 (r=-0.001)
-- **這個失敗本身是重要發現**：需要用真實 PTT 資料重新校準
+```
+FJ baseline (alpha=0.3)     → 0%   一次性衝擊假設的邊界
++ EventAccumulator          → 0%   Ebbinghaus 不是根本問題
++ CrisisAwareFJEngine       → 50%  FJ 結構限制的修正方向正確
+```
 
 ---
 
@@ -221,20 +222,28 @@ scripts/
 
 ## 安全措施
 
-| 項目 | 狀態 |
-|---|---|
-| `.env` + `.claude/` 在 .gitignore | ✅ |
-| LLM 呼叫上限 (20/run, $10/month) | ✅ |
-| PostgreSQL/Redis 綁定 localhost | ✅ |
+- `.env` + `.claude/` 在 .gitignore ✅
+- LLM 呼叫上限 (20/run, $10/month) ✅
+- PostgreSQL/Redis 綁定 127.0.0.1 ✅
+- Docker volume `pgdata` 持久化 ✅
 
 ---
 
-## Git History
+## Git History (20 commits)
 
 ```
+c209dd5  Enable PTT DB persistence in scheduler + clean startup script
+e7aa78d  PTT article persistence: ptt_articles table + crawler DB write
+48749cd  Add WBC Team Taiwan event to recall scenario
+b1cde96  CrisisAwareFJEngine: direction accuracy 0% → 50%
+469d46a  EventAccumulator: sustained crisis vs one-time shock
+4068c5d  Cross-topic coupling: multi-topic opinion dynamics
+7a75644  Diagnosis: root cause analysis of 0% prediction accuracy
+9c72c99  Validation Layer 3-4: sensitivity, calibration, prediction
+11606f6  Update docs, add research report
 cb1e854  System 1/2 dual process: message analyzer + emotionality tagger
 1a374ff  Psychology mechanisms: Ebbinghaus + ELM + Motivated Reasoning
-76eda17  What If counterfactual analysis: intervention engine + API + frontend
+76eda17  What If counterfactual analysis
 c05919f  Update project-state.md, todo.md, add README.md
 4339249  AI-assisted belief estimation via Ollama Qwen3.5
 ae41ce9  Add project-state.md

@@ -58,11 +58,40 @@ def _run_rss_crawler():
     logger.info("[scheduler] RSS done, %d edges", len(edges))
 
 
+def _should_deep_crawl() -> bool:
+    """檢查是否應觸發深度爬取（重大事件發生）。"""
+    try:
+        from globeedge.app import create_app
+        from globeedge.models import ExternalEvent
+        from datetime import datetime, timezone, timedelta
+
+        app = create_app()
+        with app.app_context():
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=8)
+            # GDELT 高衝擊事件
+            recent = ExternalEvent.query.filter(
+                ExternalEvent.occurred_at >= cutoff,
+            ).all()
+            for e in recent:
+                if e.impact_vector and e.source_type == "usgs":
+                    # M5.5+ 地震
+                    mag_impact = abs(e.impact_vector[3]) if len(e.impact_vector) > 3 else 0
+                    if mag_impact >= 0.3:
+                        logger.info("[scheduler] deep crawl triggered by earthquake: %s", e.title)
+                        return True
+            return False
+    except Exception:
+        return False
+
+
 def _run_ptt_crawler():
     """PTT 八卦/政黑板推噓分析（主力資料源），含 DB 持久化。"""
     from globeedge.crawler.ptt_crawler import run_ptt_pipeline
 
-    logger.info("[scheduler] starting PTT pipeline")
+    deep = _should_deep_crawl()
+    mode = "DEEP (30 pages)" if deep else "normal"
+    logger.info("[scheduler] starting PTT pipeline (%s)", mode)
+
     # 需要 Flask app context 才能寫 DB
     try:
         from globeedge.app import create_app
@@ -70,9 +99,10 @@ def _run_ptt_crawler():
         with app.app_context():
             edges = run_ptt_pipeline(
                 boards=["Gossiping", "HatePolitics"],
-                pages_per_board=3,
                 min_interactions=3,
                 persist_to_db=True,
+                include_hot=True,
+                deep_mode=deep,
             )
             logger.info("[scheduler] PTT done, %d edges, articles persisted", len(edges))
     except Exception:

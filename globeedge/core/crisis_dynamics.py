@@ -24,6 +24,17 @@ import numpy as np
 from .belief_state import BeliefState
 
 
+# ── 安全邊界 ──────────────────────────────────────────────
+# 崩潰臨界 spread=0.1（test_spread_floor.py 驗證）
+# MIN_SPREAD = 0.12 = 臨界 + 0.02 buffer
+MIN_SPREAD = 0.12
+
+
+def _compute_spread(B: np.ndarray) -> float:
+    """所有 Agent 信念向量的標準差均值。"""
+    return float(np.std(B, axis=0).mean())
+
+
 # ── 設定 ──────────────────────────────────────────────────
 
 @dataclass
@@ -191,6 +202,25 @@ class CrisisAwareFJEngine:
         B_next = crisis_fj_step(
             state.B, state.W, self.b0_current, eff_alpha, event, noise,
         )
+
+        # Spread floor 保護：防止高 alpha 導致信念崩潰
+        # 二分搜尋找到能維持 MIN_SPREAD 的最大 alpha
+        spread = _compute_spread(B_next)
+        if spread < MIN_SPREAD:
+            alpha_lo, alpha_hi = 0.0, eff_alpha
+            for _ in range(8):  # 8 次二分 → 精度 < 0.5%
+                alpha_mid = (alpha_lo + alpha_hi) / 2
+                B_try = crisis_fj_step(
+                    state.B, state.W, self.b0_current, alpha_mid, event, noise,
+                )
+                if _compute_spread(B_try) >= MIN_SPREAD:
+                    alpha_lo = alpha_mid
+                else:
+                    alpha_hi = alpha_mid
+            eff_alpha = alpha_lo
+            B_next = crisis_fj_step(
+                state.B, state.W, self.b0_current, eff_alpha, event, noise,
+            )
 
         bs = BeliefState(
             t=state.t + 1,
