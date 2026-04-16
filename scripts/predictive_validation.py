@@ -31,6 +31,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from globeedge.core import FJEngine, MonteCarloRunner
+from globeedge.core.crisis_dynamics import CrisisAwareFJEngine, CrisisConfig
 from globeedge.core.psychology import apply_forgetting, apply_motivated_reasoning
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -57,18 +58,25 @@ REAL_TIMELINE = [
 # ── 議題關鍵字 → 維度對應 ──────────────────────────────────
 # 每個維度關聯的 PTT 關鍵字（多個關鍵字 = 該維度的 proxy 訊號）
 DIM_KEYWORDS = {
-    0: {"name": "政府信任度",     "keywords": ["柯文哲", "京華城", "判決", "司法", "檢察"]},
-    1: {"name": "制度公信力",     "keywords": ["判決", "制度", "違憲", "憲法"]},
+    0: {"name": "政府信任度",     "keywords": ["賴清德", "民進黨", "國民黨", "執政", "下台", "無能"]},
+    1: {"name": "制度公信力",     "keywords": ["柯文哲", "京華城", "判決", "司法", "違憲"]},
     5: {"name": "政治改革意願",   "keywords": ["罷免", "民主", "改革", "青鳥"]},
-    6: {"name": "群體凝聚度",     "keywords": ["黃國昌", "民眾黨", "李貞秀", "黨籍", "開除"]},
+    6: {"name": "群體凝聯度",     "keywords": ["黃國昌", "民眾黨", "李貞秀", "黨籍", "開除"]},
     7: {"name": "外部威脅感知",   "keywords": ["鄭習會", "鄭麗文", "習近平", "兩岸", "訪中"]},
 }
 
 
 # ── Step 1: 從 DB 讀真實 PTT 推噓 ─────────────────────────
 
-def fetch_real_ptt_stance(dim_idx: int, keywords: list[str]) -> dict[int, dict]:
+def fetch_real_ptt_stance(
+    dim_idx: int,
+    keywords: list[str],
+    exclude_urls: set[str] | None = None,
+) -> dict[int, dict]:
     """查 DB，按日聚合關鍵字相關文章的推噓比。
+
+    Args:
+        exclude_urls: Hohwy 反串過濾後要排除的文章 URL 集合
 
     Returns:
         {day: {"articles": N, "push": X, "boo": Y, "arrow": Z, "push_ratio": R}}
@@ -76,6 +84,9 @@ def fetch_real_ptt_stance(dim_idx: int, keywords: list[str]) -> dict[int, dict]:
     from globeedge.app import create_app
     from globeedge.db import db
     from globeedge.models import PttArticle
+
+    if exclude_urls is None:
+        exclude_urls = set()
 
     app = create_app()
     with app.app_context():
@@ -88,6 +99,8 @@ def fetch_real_ptt_stance(dim_idx: int, keywords: list[str]) -> dict[int, dict]:
             "articles": 0, "push": 0, "boo": 0, "arrow": 0
         })
         for a in arts:
+            if a.url in exclude_urls:
+                continue
             m = re.search(r'M\.(\d+)\.A', a.url)
             if not m:
                 continue
@@ -125,8 +138,14 @@ def ptt_to_belief_signal(push_ratio: float, articles: int) -> float:
     return (push_ratio - 0.5) * 2
 
 
-def build_actual_series(horizon: int) -> dict[int, list[float]]:
+def build_actual_series(
+    horizon: int,
+    exclude_urls: set[str] | None = None,
+) -> dict[int, list[float]]:
     """建構每個維度每天的真實信念訊號時序。
+
+    Args:
+        exclude_urls: Hohwy 反串過濾後排除的文章 URL
 
     Returns:
         {dim_idx: [signal_t0, signal_t1, ...]}
@@ -135,7 +154,7 @@ def build_actual_series(horizon: int) -> dict[int, list[float]]:
     for dim_idx, info in DIM_KEYWORDS.items():
         logger.info("  Fetching dim %d (%s): %s",
                     dim_idx, info["name"], info["keywords"])
-        stance_by_day = fetch_real_ptt_stance(dim_idx, info["keywords"])
+        stance_by_day = fetch_real_ptt_stance(dim_idx, info["keywords"], exclude_urls)
 
         series = []
         for day in range(horizon + 1):
@@ -153,11 +172,17 @@ def build_actual_series(horizon: int) -> dict[int, list[float]]:
 
 # ── Step 3: GlobeEdge 預測 ────────────────────────────────
 
-def run_globeedge_prediction(horizon: int = HORIZON, b0_override=None) -> np.ndarray:
+def run_globeedge_prediction(
+    horizon: int = HORIZON,
+    b0_override=None,
+    engine_type: str = "crisis",
+    crisis_decay: float = 0.05,
+) -> np.ndarray:
     """跑 GlobeEdge 仿真，回傳 (horizon+1, n_agents, n_dims) 軌跡。
 
-    用 geopolitics scenario（覆蓋鄭習會 + 柯文哲的部分維度）
-    套用動機性推理 + Ebbinghaus
+    Args:
+        engine_type: "fj"（原始 FJ）或 "crisis"（CrisisAwareFJEngine）
+        crisis_decay: CrisisAwareFJEngine 的衰退率（僅 engine_type="crisis" 有效）
     """
     from globeedge.scenarios.geopolitics import build as build_scenario
     scenario = build_scenario()
@@ -176,17 +201,35 @@ def run_globeedge_prediction(horizon: int = HORIZON, b0_override=None) -> np.nda
             impact = np.tile(np.array(evt["impact"]), (n_agents, 1))
             events[evt["day"]] = impact
 
-    trajectory = [B0.copy()]
-    B = B0.copy()
-    for t in range(horizon):
-        B_next = alpha * W_mod @ B + (1 - alpha) * B0
-        if t in events:
-            B_next = B_next + events[t]
-        B_next = np.clip(B_next, -1.0, 1.0)
-        B_next = apply_forgetting(B_next, B0, agent_types)
-        B_next = np.clip(B_next, -1.0, 1.0)
-        B = B_next
-        trajectory.append(B.copy())
+    if engine_type == "crisis":
+        # CrisisAwareFJEngine 路徑
+        from globeedge.core.belief_state import BeliefState
+        from datetime import timezone
+        config = CrisisConfig(
+            alpha_base=alpha,
+            alpha_crisis=0.6,
+            crisis_decay=crisis_decay,
+        )
+        engine = CrisisAwareFJEngine(alpha=alpha, b0=B0, config=config)
+        initial = BeliefState(
+            t=0, B=B0.copy(), W=W_mod,
+            timestamp=datetime.now(timezone.utc),
+        )
+        results = engine.run(initial, horizon=horizon, events=events)
+        trajectory = [r.belief_state.B for r in results]
+    else:
+        # 原始 FJ 路徑（保留做對照組）
+        trajectory = [B0.copy()]
+        B = B0.copy()
+        for t in range(horizon):
+            B_next = alpha * W_mod @ B + (1 - alpha) * B0
+            if t in events:
+                B_next = B_next + events[t]
+            B_next = np.clip(B_next, -1.0, 1.0)
+            B_next = apply_forgetting(B_next, B0, agent_types)
+            B_next = np.clip(B_next, -1.0, 1.0)
+            B = B_next
+            trajectory.append(B.copy())
 
     return np.array(trajectory)
 
@@ -307,6 +350,12 @@ def main():
     parser = argparse.ArgumentParser(description="GlobeEdge 真實 PTT 預測驗證")
     parser.add_argument("--output", type=str, default="results/predictive_validation.json")
     parser.add_argument("--skip-q3", action="store_true", help="跳過 b(0) 敏感度")
+    parser.add_argument("--engine", choices=["fj", "crisis"], default="crisis",
+                        help="fj=原始 FJ, crisis=CrisisAwareFJEngine（預設）")
+    parser.add_argument("--crisis-decay", type=float, default=0.05,
+                        help="CrisisAwareFJEngine 危機衰退率（預設 0.05）")
+    parser.add_argument("--hohwy-filter", type=str, default=None,
+                        help="Hohwy 反串過濾 JSON 路徑（排除 sarcasm_urls）")
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
@@ -316,15 +365,29 @@ def main():
     logger.info(f"  期間：{START_DATE.date()} 到 {END_DATE.date()}")
     logger.info(f"  Horizon: {HORIZON} 天")
     logger.info(f"  真實事件：{len(REAL_TIMELINE)}")
+    logger.info(f"  Engine: {args.engine}  crisis_decay: {args.crisis_decay}")
     logger.info("=" * 60)
+
+    # Hohwy 反串過濾
+    exclude_urls = set()
+    if args.hohwy_filter:
+        with open(args.hohwy_filter, encoding="utf-8") as f:
+            hohwy_data = json.load(f)
+        exclude_urls = set(hohwy_data.get("sarcasm_urls", []))
+        logger.info(f"  Hohwy 過濾：排除 {len(exclude_urls)} 篇高 PE 文章")
 
     # Step 1: 從 DB 讀真實訊號
     logger.info("\nStep 1: 從 DB 讀取真實 PTT 推噓訊號")
-    actual = build_actual_series(horizon=HORIZON)
+    actual = build_actual_series(horizon=HORIZON, exclude_urls=exclude_urls)
 
-    # Step 2: GlobeEdge 基線預測
-    logger.info("\nStep 2: GlobeEdge 基線預測（geopolitics scenario）")
-    predicted = run_globeedge_prediction(horizon=HORIZON)
+    # Step 2: GlobeEdge 預測
+    engine_label = "CrisisAwareFJEngine" if args.engine == "crisis" else "FJEngine"
+    logger.info(f"\nStep 2: GlobeEdge 預測（{engine_label}, decay={args.crisis_decay}）")
+    predicted = run_globeedge_prediction(
+        horizon=HORIZON,
+        engine_type=args.engine,
+        crisis_decay=args.crisis_decay,
+    )
     logger.info(f"  Trajectory shape: {predicted.shape}")
 
     # Step 3: 比對
@@ -360,6 +423,10 @@ def main():
             logger.info(f"  → W 矩陣主導：b(0) 變動對結果影響小")
         report["sensitivity_b0"] = q3
         report["delta_baseline_vs_random"] = round(delta, 3)
+
+    # 記錄引擎設定
+    report["engine"] = args.engine
+    report["crisis_decay"] = args.crisis_decay
 
     # 輸出
     with open(args.output, "w", encoding="utf-8") as f:

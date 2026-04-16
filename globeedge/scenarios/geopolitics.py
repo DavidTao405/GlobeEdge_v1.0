@@ -42,12 +42,14 @@ CORE_AGENTS = [
     ),
     AgentDef(
         name="軍事分析KOL", type="kol", domain="social",
-        belief_init=[0.1, 0.1, 0.0, 0.2, 0.5, 0.3, 0.1, 0.7],
+        belief_init=[0.1, 0.1, 0.0, 0.2, 0.5, 0.5, 0.59, 0.49],
+        # b(0) PTT 校準：dim5 0.3→0.5, dim6 0.1→0.59, dim7 0.7→0.49
         description="偏鷹派",
     ),
     AgentDef(
         name="和平倡議KOL", type="kol", domain="social",
-        belief_init=[-0.1, -0.1, 0.1, 0.1, -0.3, 0.4, 0.2, -0.3],
+        belief_init=[-0.1, -0.1, 0.1, 0.1, -0.3, 0.55, 0.61, 0.29],
+        # b(0) PTT 校準：dim5 0.4→0.55, dim6 0.2→0.61, dim7 -0.3→0.29
         description="偏鴿派",
     ),
 ]
@@ -55,27 +57,32 @@ CORE_AGENTS = [
 EDGE_AGENTS = [
     AgentDef(
         name="役齡青年", type="demographic", domain="social",
-        belief_init=[0.0, -0.2, -0.3, 0.2, 0.1, 0.1, -0.1, 0.4],
+        belief_init=[0.0, -0.2, -0.3, 0.2, 0.1, 0.4, 0.55, 0.43],
+        # b(0) PTT 校準：dim5 0.1→0.4, dim6 -0.1→0.55, dim7 0.4→0.43
         description="兵役議題敏感", is_core=False,
     ),
     AgentDef(
         name="中老年族群", type="demographic", domain="social",
-        belief_init=[0.1, 0.1, 0.0, 0.3, 0.2, 0.1, 0.3, 0.5],
+        belief_init=[0.1, 0.1, 0.0, 0.3, 0.2, 0.4, 0.63, 0.45],
+        # b(0) PTT 校準：dim5 0.1→0.4, dim6 0.3→0.63, dim7 0.5→0.45
         description="歷史記憶影響", is_core=False,
     ),
     AgentDef(
         name="商業族群", type="demographic", domain="social",
-        belief_init=[-0.1, -0.1, -0.2, 0.6, 0.0, -0.1, -0.1, 0.3],
+        belief_init=[-0.1, -0.1, -0.2, 0.6, 0.0, 0.3, 0.55, 0.41],
+        # b(0) PTT 校準：dim5 -0.1→0.3, dim6 -0.1→0.55, dim7 0.3→0.41
         description="憂商業衝擊", is_core=False,
     ),
     AgentDef(
         name="PTT軍武板", type="forum", domain="social",
-        belief_init=[0.1, 0.1, 0.0, 0.1, 0.6, 0.4, 0.2, 0.7],
+        belief_init=[0.1, 0.1, 0.0, 0.1, 0.6, 0.49, 0.72, 0.63],
+        # b(0) PTT 校準：dim5 0.4→0.49, dim6 0.2→0.72, dim7 0.7→0.63
         description="備戰意識高", is_core=False,
     ),
     AgentDef(
         name="PTT政黑板", type="forum", domain="social",
-        belief_init=[-0.5, -0.3, -0.2, 0.2, -0.1, 0.0, -0.3, 0.3],
+        belief_init=[-0.5, -0.3, -0.2, 0.2, -0.1, 0.19, 0.62, 0.44],
+        # b(0) PTT 校準：dim5 0.0→0.19, dim6 -0.3→0.62, dim7 0.3→0.44
         description="普遍懷疑政府", is_core=False,
     ),
 ]
