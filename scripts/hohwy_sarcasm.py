@@ -169,6 +169,9 @@ def fetch_dim0_articles() -> list[dict]:
                 continue
             total_pb = (a.push_count or 0) + (a.boo_count or 0)
             push_ratio = (a.push_count or 0) / total_pb if total_pb > 0 else 0.5
+            # 用標題 + 內文前 200 字做 embedding（內文補抓後可用）
+            content_snippet = (a.content or "")[:200]
+            embed_text = f"{a.title}\n{content_snippet}" if content_snippet else a.title
             results.append({
                 "url": a.url,
                 "title": a.title,
@@ -179,7 +182,8 @@ def fetch_dim0_articles() -> list[dict]:
                 "boo": a.boo_count or 0,
                 "arrow": a.arrow_count or 0,
                 "push_ratio": round(push_ratio, 3),
-                "text": a.title,  # 用標題做 embedding（文章內容未存）
+                "text": embed_text,
+                "has_content": bool(content_snippet),
             })
     return results
 

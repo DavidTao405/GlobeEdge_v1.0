@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Float, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from globeedge.db import db
@@ -39,6 +39,11 @@ class PttArticle(db.Model):
 
     # 情緒性（由 message_analyzer 標記）
     emotionality: Mapped[float | None] = mapped_column(Float)        # 0.0 到 1.0
+
+    # 文章內文 + 推文串（backfill_content.py 補抓）
+    content: Mapped[str | None] = mapped_column(Text)                # 文章本文
+    push_comments: Mapped[dict | None] = mapped_column(JSONB)        # [{type, author, content, time}]
+    content_crawled: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(
         db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

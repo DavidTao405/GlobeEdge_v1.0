@@ -1,0 +1,56 @@
+{
+  "period": "2026-03-26 to 2026-04-16",
+  "horizon": 20,
+  "dimensions": {
+    "0": {
+      "name": "政府信任度",
+      "direction_accuracy": 0.095,
+      "valid_days": 21,
+      "pearson_r": 0.24,
+      "mse": 0.2488,
+      "pred_final": 0.016,
+      "actual_final": 0.448
+    },
+    "1": {
+      "name": "制度公信力",
+      "direction_accuracy": 0.048,
+      "valid_days": 21,
+      "pearson_r": 0.217,
+      "mse": 0.4057,
+      "pred_final": 0.005,
+      "actual_final": 0.68
+    },
+    "5": {
+      "name": "政治改革意願",
+      "direction_accuracy": 0.905,
+      "valid_days": 21,
+      "pearson_r": 0.097,
+      "mse": 0.1099,
+      "pred_final": 0.247,
+      "actual_final": 0.651
+    },
+    "6": {
+      "name": "群體凝聯度",
+      "direction_accuracy": 0.944,
+      "valid_days": 18,
+      "pearson_r": 0.27,
+      "mse": 0.1183,
+      "pred_final": 0.331,
+      "actual_final": 0.66
+    },
+    "7": {
+      "name": "外部威脅感知",
+      "direction_accuracy": 0.941,
+      "valid_days": 17,
+      "pearson_r": -0.161,
+      "mse": 0.0683,
+      "pred_final": 0.303,
+      "actual_final": 0.596
+    }
+  },
+  "overall_auc": 0.587,
+  "best_dimension": "群體凝聯度",
+  "worst_dimension": "制度公信力",
+  "engine": "crisis",
+  "crisis_decay": 0.05
+}

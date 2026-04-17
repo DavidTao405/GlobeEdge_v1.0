@@ -90,9 +90,12 @@ def fetch_real_ptt_stance(
 
     app = create_app()
     with app.app_context():
-        # 用 OR 查所有關鍵字
-        filters = [PttArticle.title.contains(kw) for kw in keywords]
-        arts = PttArticle.query.filter(db.or_(*filters)).all()
+        # 用 OR 查所有關鍵字（標題 + 內文）
+        title_filters = [PttArticle.title.contains(kw) for kw in keywords]
+        content_filters = [PttArticle.content.contains(kw) for kw in keywords
+                           if hasattr(PttArticle, 'content')]
+        all_filters = title_filters + content_filters
+        arts = PttArticle.query.filter(db.or_(*all_filters)).all()
 
         # 按實際發表日期分組（從 URL timestamp）
         by_day: dict[int, dict] = defaultdict(lambda: {
