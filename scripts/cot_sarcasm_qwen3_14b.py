@@ -68,7 +68,7 @@ def classify(title, content, comments, push, boo):
     try:
         r = httpx.post(OLLAMA, json={
             "model": MODEL, "stream": False,
-            "options": {"temperature": 0.05, "num_predict": 500, "num_ctx": 8192},
+            "options": {"temperature": 0.05, "num_predict": 1000, "num_ctx": 8192},
             "messages": [
                 {"role": "system", "content": "/no_think"},
                 {"role": "user", "content": prompt},
@@ -78,9 +78,25 @@ def classify(title, content, comments, push, boo):
         elapsed = time.time() - t0
         raw = r.json().get("message", {}).get("content", "")
         raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-        match = re.search(r"\{[^}]+\}", raw)
+        # Try exact JSON match first, then truncated JSON repair
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
         if match:
-            result = json.loads(match.group())
+            try:
+                result = json.loads(match.group())
+            except json.JSONDecodeError:
+                # Truncated JSON — try to repair by closing the string + brace
+                truncated = match.group()
+                if truncated.count('"') % 2 == 1:
+                    truncated += '"'
+                if not truncated.endswith("}"):
+                    truncated += "}"
+                try:
+                    result = json.loads(truncated)
+                except json.JSONDecodeError:
+                    # Last resort: extract what we can
+                    is_s = '"is_sarcasm":true' in raw.lower() or '"is_sarcasm": true' in raw.lower()
+                    result = {"is_sarcasm": is_s, "stance": "neutral", "confidence": 0.5,
+                              "reasoning": "truncated_repair"}
             result["elapsed"] = round(elapsed, 1)
             result["status"] = "ok"
         else:
